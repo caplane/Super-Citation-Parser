@@ -1,1256 +1,348 @@
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>CiteFlex Pro - Academic Citation Intelligence</title>
-    
-    <!-- Premium Fonts -->
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-    
-    <!-- Phosphor Icons -->
-    <script src="https://unpkg.com/@phosphor-icons/web"></script>
-    
-    <!-- Alpine.js for reactivity -->
-    <script defer src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js"></script>
-    
+    <title>CiteResolver: Pro Editor</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <style>
-        :root {
-            --primary-gradient: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            --accent-gradient: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
-            --success-gradient: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%);
-            --dark-gradient: linear-gradient(180deg, #0f0f1e 0%, #1a1a2e 100%);
-            
-            --text-primary: #1a1a2e;
-            --text-secondary: #6b7280;
-            --text-muted: #9ca3af;
-            
-            --bg-primary: #ffffff;
-            --bg-secondary: #f9fafb;
-            --bg-tertiary: #f3f4f6;
-            
-            --border-light: #e5e7eb;
-            --border-medium: #d1d5db;
-            
-            --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
-            --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
-            --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
-            --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
-            --shadow-glow: 0 0 40px rgba(102, 126, 234, 0.1);
-            
-            --timing-function: cubic-bezier(0.4, 0, 0.2, 1);
-        }
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap');
+        body { font-family: 'Inter', sans-serif; }
         
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-        
-        body {
-            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-            background: var(--bg-secondary);
-            color: var(--text-primary);
+        /* Custom Rich Editor Style */
+        .rich-editor-pro {
+            min-height: 100px;
+            padding: 16px;
+            border: 1px solid #e5e7eb; /* Light gray border */
+            border-radius: 0.5rem; /* rounded-lg */
+            font-family: "Times New Roman", serif; /* Citation font */
+            font-size: 1.15rem;
             line-height: 1.6;
-            overflow-x: hidden;
-        }
-        
-        /* Premium Navigation */
-        .nav-header {
-            background: rgba(255, 255, 255, 0.95);
-            backdrop-filter: blur(20px);
-            border-bottom: 1px solid var(--border-light);
-            position: sticky;
-            top: 0;
-            z-index: 100;
-            transition: all 0.3s var(--timing-function);
-        }
-        
-        .nav-container {
-            max-width: 1400px;
-            margin: 0 auto;
-            padding: 1rem 2rem;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-        
-        .logo {
-            display: flex;
-            align-items: center;
-            gap: 0.75rem;
-            font-weight: 700;
-            font-size: 1.25rem;
-            background: var(--primary-gradient);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            background-clip: text;
-        }
-        
-        .logo-icon {
-            width: 40px;
-            height: 40px;
-            background: var(--primary-gradient);
-            border-radius: 12px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            color: white;
-            font-size: 20px;
-            box-shadow: var(--shadow-md);
-        }
-        
-        .nav-actions {
-            display: flex;
-            gap: 1rem;
-            align-items: center;
-        }
-        
-        .status-badge {
-            padding: 0.375rem 1rem;
-            background: rgba(67, 233, 123, 0.1);
-            color: #059669;
-            border-radius: 9999px;
-            font-size: 0.875rem;
-            font-weight: 500;
-            display: flex;
-            align-items: center;
-            gap: 0.5rem;
-        }
-        
-        .status-dot {
-            width: 8px;
-            height: 8px;
-            background: #10b981;
-            border-radius: 50%;
-            animation: pulse 2s infinite;
-        }
-        
-        @keyframes pulse {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.5; }
-        }
-        
-        /* Hero Section */
-        .hero-section {
-            padding: 4rem 2rem 2rem;
-            text-align: center;
-            position: relative;
-            overflow: hidden;
-        }
-        
-        .hero-background {
-            position: absolute;
-            top: -50%;
-            left: 50%;
-            transform: translateX(-50%);
-            width: 800px;
-            height: 800px;
-            background: radial-gradient(circle, rgba(102, 126, 234, 0.1) 0%, transparent 70%);
-            pointer-events: none;
-        }
-        
-        .hero-content {
-            position: relative;
-            max-width: 900px;
-            margin: 0 auto;
-        }
-        
-        .hero-badge {
-            display: inline-flex;
-            align-items: center;
-            gap: 0.5rem;
-            padding: 0.25rem 1rem;
-            background: var(--primary-gradient);
-            color: white;
-            border-radius: 9999px;
-            font-size: 0.875rem;
-            font-weight: 500;
-            margin-bottom: 1.5rem;
-            box-shadow: var(--shadow-md);
-        }
-        
-        .hero-title {
-            font-size: clamp(2.5rem, 5vw, 4rem);
-            font-weight: 700;
-            line-height: 1.1;
-            margin-bottom: 1.5rem;
-            background: linear-gradient(135deg, #1a1a2e 0%, #667eea 100%);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            background-clip: text;
-        }
-        
-        .hero-subtitle {
-            font-size: 1.25rem;
-            color: var(--text-secondary);
-            max-width: 600px;
-            margin: 0 auto 3rem;
-            line-height: 1.6;
-        }
-        
-        /* Value Proposition Cards */
-        .value-props {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-            gap: 1.5rem;
-            max-width: 1200px;
-            margin: 0 auto 3rem;
-            padding: 0 2rem;
-        }
-        
-        .value-card {
-            background: white;
-            border-radius: 20px;
-            padding: 2rem;
-            border: 1px solid var(--border-light);
-            transition: all 0.3s var(--timing-function);
-            position: relative;
-            overflow: hidden;
-        }
-        
-        .value-card::before {
-            content: '';
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 3px;
-            background: var(--primary-gradient);
-            transform: scaleX(0);
-            transform-origin: left;
-            transition: transform 0.3s var(--timing-function);
-        }
-        
-        .value-card:hover {
-            transform: translateY(-5px);
-            box-shadow: var(--shadow-xl);
-        }
-        
-        .value-card:hover::before {
-            transform: scaleX(1);
-        }
-        
-        .value-icon {
-            width: 56px;
-            height: 56px;
-            background: var(--bg-secondary);
-            border-radius: 16px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            margin-bottom: 1.5rem;
-            font-size: 28px;
-            color: #667eea;
-        }
-        
-        .value-title {
-            font-size: 1.25rem;
-            font-weight: 600;
-            margin-bottom: 0.75rem;
-            color: var(--text-primary);
-        }
-        
-        .value-description {
-            color: var(--text-secondary);
-            line-height: 1.6;
-        }
-        
-        .value-metric {
-            display: inline-block;
-            margin-top: 1rem;
-            padding: 0.5rem 1rem;
-            background: rgba(102, 126, 234, 0.1);
-            color: #667eea;
-            border-radius: 8px;
-            font-weight: 600;
-            font-size: 0.875rem;
-        }
-        
-        /* Main Application Area */
-        .app-container {
-            max-width: 1400px;
-            margin: 0 auto;
-            padding: 2rem;
-        }
-        
-        /* Upload Area */
-        .upload-section {
-            background: white;
-            border-radius: 24px;
-            padding: 3rem;
-            border: 2px dashed var(--border-medium);
-            text-align: center;
-            transition: all 0.3s var(--timing-function);
-            position: relative;
-            overflow: hidden;
-            margin-bottom: 2rem;
-            box-shadow: var(--shadow-lg);
-        }
-        
-        .upload-section.dragover {
-            border-color: #667eea;
-            background: rgba(102, 126, 234, 0.02);
-            transform: scale(1.01);
-        }
-        
-        .upload-icon {
-            width: 80px;
-            height: 80px;
-            background: var(--bg-secondary);
-            border-radius: 20px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            margin: 0 auto 1.5rem;
-            font-size: 40px;
-            color: #667eea;
-            transition: all 0.3s var(--timing-function);
-        }
-        
-        .upload-section:hover .upload-icon {
-            background: var(--primary-gradient);
-            color: white;
-            transform: rotate(5deg) scale(1.1);
-        }
-        
-        .upload-title {
-            font-size: 1.5rem;
-            font-weight: 600;
-            margin-bottom: 0.5rem;
-        }
-        
-        .upload-subtitle {
-            color: var(--text-secondary);
-            margin-bottom: 2rem;
-        }
-        
-        .upload-button {
-            padding: 0.875rem 2rem;
-            background: var(--primary-gradient);
-            color: white;
-            border: none;
-            border-radius: 12px;
-            font-weight: 600;
-            font-size: 1rem;
-            cursor: pointer;
-            transition: all 0.3s var(--timing-function);
-            box-shadow: var(--shadow-md);
-            position: relative;
-            overflow: hidden;
-        }
-        
-        .upload-button::before {
-            content: '';
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            width: 0;
-            height: 0;
-            border-radius: 50%;
-            background: rgba(255, 255, 255, 0.3);
-            transform: translate(-50%, -50%);
-            transition: width 0.6s, height 0.6s;
-        }
-        
-        .upload-button:hover {
-            transform: translateY(-2px);
-            box-shadow: var(--shadow-xl);
-        }
-        
-        .upload-button:active::before {
-            width: 300px;
-            height: 300px;
-        }
-        
-        /* Document Loaded State */
-        .document-loaded {
-            background: white;
-            border-radius: 24px;
-            padding: 2rem;
-            margin-bottom: 2rem;
-            box-shadow: var(--shadow-lg);
-            display: none;
-        }
-        
-        .document-loaded.active {
-            display: block;
-            animation: slideIn 0.5s var(--timing-function);
-        }
-        
-        @keyframes slideIn {
-            from {
-                opacity: 0;
-                transform: translateY(20px);
-            }
-            to {
-                opacity: 1;
-                transform: translateY(0);
-            }
-        }
-        
-        .document-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding-bottom: 1.5rem;
-            border-bottom: 1px solid var(--border-light);
-            margin-bottom: 2rem;
-        }
-        
-        .document-info {
-            display: flex;
-            align-items: center;
-            gap: 1rem;
-        }
-        
-        .document-icon {
-            width: 48px;
-            height: 48px;
-            background: var(--bg-secondary);
-            border-radius: 12px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            color: #667eea;
-            font-size: 24px;
-        }
-        
-        .document-name {
-            font-weight: 600;
-            font-size: 1.125rem;
-            margin-bottom: 0.25rem;
-        }
-        
-        .document-meta {
-            color: var(--text-secondary);
-            font-size: 0.875rem;
-        }
-        
-        /* Endnotes List */
-        .endnotes-container {
-            background: white;
-            border-radius: 24px;
-            padding: 2rem;
-            box-shadow: var(--shadow-lg);
-            max-height: 600px;
-            overflow-y: auto;
-            display: none;
-        }
-        
-        .endnotes-container.active {
-            display: block;
-        }
-        
-        .endnotes-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 2rem;
-            padding-bottom: 1rem;
-            border-bottom: 2px solid var(--bg-secondary);
-        }
-        
-        .endnotes-title {
-            font-size: 1.5rem;
-            font-weight: 600;
-            display: flex;
-            align-items: center;
-            gap: 0.75rem;
-        }
-        
-        .endnotes-count {
-            padding: 0.25rem 0.75rem;
-            background: var(--primary-gradient);
-            color: white;
-            border-radius: 8px;
-            font-size: 0.875rem;
-            font-weight: 600;
-        }
-        
-        .endnote-item {
-            background: var(--bg-secondary);
-            border-radius: 16px;
-            padding: 1.5rem;
-            margin-bottom: 1rem;
-            border: 1px solid var(--border-light);
-            transition: all 0.3s var(--timing-function);
-            position: relative;
-            overflow: hidden;
-        }
-        
-        .endnote-item:hover {
-            transform: translateX(5px);
-            box-shadow: var(--shadow-md);
-            border-color: #667eea;
-        }
-        
-        .endnote-number {
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            width: 32px;
-            height: 32px;
-            background: white;
-            border: 2px solid #667eea;
-            color: #667eea;
-            border-radius: 50%;
-            font-weight: 600;
-            font-size: 0.875rem;
-            margin-bottom: 1rem;
-        }
-        
-        .endnote-content {
-            font-size: 0.95rem;
-            line-height: 1.6;
-            color: var(--text-primary);
-            margin-bottom: 1rem;
-        }
-        
-        .endnote-actions {
-            display: flex;
-            gap: 0.5rem;
-        }
-        
-        .endnote-btn {
-            padding: 0.5rem 1rem;
-            background: white;
-            border: 1px solid var(--border-medium);
-            border-radius: 8px;
-            font-size: 0.875rem;
-            font-weight: 500;
-            cursor: pointer;
-            transition: all 0.3s var(--timing-function);
-            display: flex;
-            align-items: center;
-            gap: 0.5rem;
-        }
-        
-        .endnote-btn:hover {
-            background: var(--primary-gradient);
-            color: white;
-            border-color: transparent;
-            transform: translateY(-2px);
-        }
-        
-        /* Search Modal */
-        .search-modal {
-            position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background: rgba(0, 0, 0, 0.5);
-            backdrop-filter: blur(10px);
-            display: none;
-            align-items: center;
-            justify-content: center;
-            z-index: 1000;
-            padding: 2rem;
-        }
-        
-        .search-modal.active {
-            display: flex;
-            animation: fadeIn 0.3s var(--timing-function);
-        }
-        
-        @keyframes fadeIn {
-            from { opacity: 0; }
-            to { opacity: 1; }
-        }
-        
-        .modal-content {
-            background: white;
-            border-radius: 24px;
-            padding: 2rem;
-            max-width: 600px;
-            width: 100%;
-            max-height: 80vh;
-            overflow-y: auto;
-            box-shadow: var(--shadow-xl);
-            animation: slideUp 0.3s var(--timing-function);
-        }
-        
-        @keyframes slideUp {
-            from {
-                transform: translateY(50px);
-                opacity: 0;
-            }
-            to {
-                transform: translateY(0);
-                opacity: 1;
-            }
-        }
-        
-        .modal-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 2rem;
-        }
-        
-        .modal-title {
-            font-size: 1.5rem;
-            font-weight: 600;
-        }
-        
-        .modal-close {
-            width: 32px;
-            height: 32px;
-            border-radius: 50%;
-            border: none;
-            background: var(--bg-secondary);
-            cursor: pointer;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            transition: all 0.3s var(--timing-function);
-        }
-        
-        .modal-close:hover {
-            background: var(--accent-gradient);
-            color: white;
-            transform: rotate(90deg);
-        }
-        
-        .search-input-group {
-            position: relative;
-            margin-bottom: 1.5rem;
-        }
-        
-        .search-input {
-            width: 100%;
-            padding: 1rem 1rem 1rem 3rem;
-            border: 2px solid var(--border-medium);
-            border-radius: 12px;
-            font-size: 1rem;
-            transition: all 0.3s var(--timing-function);
-        }
-        
-        .search-input:focus {
+            background: #ffffff;
+            transition: box-shadow 0.2s, border-color 0.2s;
             outline: none;
-            border-color: #667eea;
-            box-shadow: 0 0 0 4px rgba(102, 126, 234, 0.1);
+            box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.05); /* Subtle shadow */
         }
-        
-        .search-icon {
-            position: absolute;
-            left: 1rem;
-            top: 50%;
-            transform: translateY(-50%);
-            color: var(--text-muted);
+        .rich-editor-pro:focus {
+            border-color: #3b82f6; /* Blue border on focus */
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.25); /* Focus ring */
         }
-        
-        .search-type-tabs {
-            display: flex;
-            gap: 0.5rem;
-            margin-bottom: 1.5rem;
-            padding: 0.25rem;
-            background: var(--bg-secondary);
-            border-radius: 12px;
-        }
-        
-        .tab-btn {
-            flex: 1;
-            padding: 0.75rem;
-            border: none;
-            background: transparent;
-            border-radius: 8px;
-            font-weight: 500;
+        .rich-editor-pro em {
+            font-style: italic;
+            background-color: #fef3c7; /* Light yellow background for italics */
+            padding: 0 2px;
+            border-radius: 2px;
+        } 
+        .rich-editor-pro a {
+            color: #1d4ed8; /* Darker blue for professional look */
+            text-decoration: underline;
             cursor: pointer;
-            transition: all 0.3s var(--timing-function);
         }
         
-        .tab-btn.active {
-            background: white;
-            box-shadow: var(--shadow-sm);
+        /* Custom Scrollbar for Results Panel */
+        .results-panel::-webkit-scrollbar {
+            width: 6px;
         }
-        
-        /* Search Results */
-        .search-results {
-            max-height: 400px;
-            overflow-y: auto;
-        }
-        
-        .result-item {
-            background: var(--bg-secondary);
-            border-radius: 12px;
-            padding: 1rem;
-            margin-bottom: 0.75rem;
-            cursor: pointer;
-            transition: all 0.3s var(--timing-function);
-            border: 2px solid transparent;
-        }
-        
-        .result-item:hover {
-            border-color: #667eea;
-            transform: translateX(5px);
-        }
-        
-        .result-title {
-            font-weight: 600;
-            margin-bottom: 0.25rem;
-        }
-        
-        .result-meta {
-            font-size: 0.875rem;
-            color: var(--text-secondary);
-        }
-        
-        /* Download Section */
-        .download-section {
-            background: var(--dark-gradient);
-            color: white;
-            border-radius: 24px;
-            padding: 3rem;
-            text-align: center;
-            margin-top: 2rem;
-            position: relative;
-            overflow: hidden;
-            display: none;
-        }
-        
-        .download-section.active {
-            display: block;
-        }
-        
-        .download-section::before {
-            content: '';
-            position: absolute;
-            top: -50%;
-            right: -50%;
-            width: 200%;
-            height: 200%;
-            background: radial-gradient(circle, rgba(255, 255, 255, 0.05) 0%, transparent 70%);
-            animation: rotate 30s linear infinite;
-        }
-        
-        @keyframes rotate {
-            from { transform: rotate(0deg); }
-            to { transform: rotate(360deg); }
-        }
-        
-        .download-content {
-            position: relative;
-        }
-        
-        .download-title {
-            font-size: 2rem;
-            font-weight: 700;
-            margin-bottom: 1rem;
-        }
-        
-        .download-subtitle {
-            color: rgba(255, 255, 255, 0.8);
-            margin-bottom: 2rem;
-            font-size: 1.125rem;
-        }
-        
-        .download-btn {
-            padding: 1rem 3rem;
-            background: var(--success-gradient);
-            color: white;
-            border: none;
-            border-radius: 12px;
-            font-weight: 600;
-            font-size: 1.125rem;
-            cursor: pointer;
-            transition: all 0.3s var(--timing-function);
-            box-shadow: 0 10px 30px rgba(67, 233, 123, 0.3);
-            display: inline-flex;
-            align-items: center;
-            gap: 0.75rem;
-        }
-        
-        .download-btn:hover {
-            transform: translateY(-3px);
-            box-shadow: 0 15px 40px rgba(67, 233, 123, 0.4);
-        }
-        
-        /* Stats Section */
-        .stats-section {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 1rem;
-            margin: 2rem 0;
-        }
-        
-        .stat-card {
-            background: rgba(255, 255, 255, 0.05);
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            border-radius: 12px;
-            padding: 1.5rem;
-            text-align: center;
-        }
-        
-        .stat-value {
-            font-size: 2rem;
-            font-weight: 700;
-            background: var(--success-gradient);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            background-clip: text;
-        }
-        
-        .stat-label {
-            color: rgba(255, 255, 255, 0.7);
-            font-size: 0.875rem;
-            margin-top: 0.5rem;
-        }
-        
-        /* Loading States */
-        .loading-spinner {
-            width: 40px;
-            height: 40px;
-            border: 3px solid var(--border-light);
-            border-top-color: #667eea;
-            border-radius: 50%;
-            animation: spin 1s linear infinite;
-            margin: 0 auto;
-        }
-        
-        @keyframes spin {
-            to { transform: rotate(360deg); }
-        }
-        
-        /* Tooltips */
-        .tooltip {
-            position: relative;
-        }
-        
-        .tooltip::after {
-            content: attr(data-tooltip);
-            position: absolute;
-            bottom: 125%;
-            left: 50%;
-            transform: translateX(-50%);
-            padding: 0.5rem 1rem;
-            background: var(--text-primary);
-            color: white;
-            border-radius: 8px;
-            font-size: 0.875rem;
-            white-space: nowrap;
-            opacity: 0;
-            pointer-events: none;
-            transition: all 0.3s var(--timing-function);
-        }
-        
-        .tooltip:hover::after {
-            opacity: 1;
-            transform: translateX(-50%) translateY(-5px);
-        }
-        
-        /* Responsive Design */
-        @media (max-width: 768px) {
-            .hero-title {
-                font-size: 2rem;
-            }
-            
-            .value-props {
-                grid-template-columns: 1fr;
-            }
-            
-            .nav-container {
-                padding: 1rem;
-            }
-            
-            .app-container {
-                padding: 1rem;
-            }
-            
-            .modal-content {
-                padding: 1.5rem;
-            }
-        }
-        
-        /* Print Styles */
-        @media print {
-            .nav-header,
-            .upload-section,
-            .endnote-actions,
-            .download-section {
-                display: none !important;
-            }
-            
-            .endnote-item {
-                page-break-inside: avoid;
-            }
+        .results-panel::-webkit-scrollbar-thumb {
+            background-color: #d1d5db;
+            border-radius: 3px;
         }
     </style>
 </head>
-<body x-data="citationApp()">
-    <!-- Premium Navigation -->
-    <nav class="nav-header">
-        <div class="nav-container">
-            <div class="logo">
-                <div class="logo-icon">
-                    <i class="ph-graduation-cap-fill"></i>
-                </div>
-                CiteFlex Pro
-            </div>
-            <div class="nav-actions">
-                <div class="status-badge">
-                    <span class="status-dot"></span>
-                    Ready to Process
-                </div>
-            </div>
-        </div>
-    </nav>
-    
-    <!-- Hero Section -->
-    <section class="hero-section">
-        <div class="hero-background"></div>
-        <div class="hero-content">
-            <div class="hero-badge">
-                <i class="ph-sparkle"></i>
-                AI-Powered Citation Intelligence
-            </div>
-            <h1 class="hero-title">Transform Hours of Citation Work into Minutes</h1>
-            <p class="hero-subtitle">
-                Professional-grade endnote formatting for Word documents with automatic metadata fetching, 
-                government source recognition, and perfect style preservation.
-            </p>
-        </div>
-    </section>
-    
-    <!-- Value Proposition Cards -->
-    <div class="value-props">
-        <div class="value-card">
-            <div class="value-icon">
-                <i class="ph-clock-fill"></i>
-            </div>
-            <h3 class="value-title">Save 5+ Hours Per Document</h3>
-            <p class="value-description">
-                Eliminate manual citation formatting. Our AI processes hundreds of endnotes in seconds, 
-                maintaining perfect consistency across your entire document.
-            </p>
-            <span class="value-metric">90% Time Reduction</span>
-        </div>
+<body class="bg-gray-50 min-h-screen">
+    <div class="container mx-auto p-4 md:p-8 max-w-7xl">
         
-        <div class="value-card">
-            <div class="value-icon">
-                <i class="ph-magic-wand-fill"></i>
+        <!-- Header & Controls -->
+        <header class="bg-white p-6 rounded-xl shadow-lg mb-8">
+            <div class="flex flex-col md:flex-row justify-between items-start md:items-center">
+                <div class="mb-4 md:mb-0">
+                    <h1 class="text-3xl font-bold text-gray-800 flex items-center">
+                        CiteResolver 
+                        <span class="ml-3 px-3 py-1 text-xs font-semibold bg-indigo-100 text-indigo-700 rounded-full tracking-wider shadow-sm">
+                            V20.0
+                        </span>
+                    </h1>
+                    <p class="text-sm text-gray-500 mt-1">Interactive Citation Editor</p>
+                </div>
+
+                {% if filename %}
+                <div class="controls flex flex-col sm:flex-row space-y-3 sm:space-y-0 sm:space-x-4">
+                    <select id="style-selector" class="py-2.5 px-4 border border-gray-300 rounded-lg text-sm font-medium focus:ring-indigo-500 focus:border-indigo-500 transition duration-150 shadow-sm">
+                        <option value="chicago">Chicago (Notes)</option>
+                        <option value="mla">MLA</option>
+                        <option value="apa">APA</option>
+                    </select>
+                    <a href="/reset" class="btn bg-gray-500 hover:bg-gray-600 text-white font-semibold py-2.5 px-4 rounded-lg flex items-center justify-center shadow-md transition duration-150">
+                        <i class="fas fa-redo mr-2"></i> Start Over
+                    </a>
+                    <a href="/download" class="btn bg-green-600 hover:bg-green-700 text-white font-semibold py-2.5 px-4 rounded-lg flex items-center justify-center shadow-md transition duration-150">
+                        <i class="fas fa-download mr-2"></i> Download Document
+                    </a>
+                </div>
+                {% endif %}
             </div>
-            <h3 class="value-title">Intelligent Source Recognition</h3>
-            <p class="value-description">
-                Automatically identifies government agencies from .gov domains, fetches book metadata via Google Books, 
-                and properly formats web sources with access dates.
-            </p>
-            <span class="value-metric">17+ Agency Types</span>
-        </div>
+        </header>
         
-        <div class="value-card">
-            <div class="value-icon">
-                <i class="ph-shield-check-fill"></i>
+        {% if not filename %}
+        <!-- Upload State -->
+        <form action="/upload" method="post" enctype="multipart/form-data" class="upload-box bg-white p-16 rounded-xl shadow-lg border-2 border-dashed border-gray-300 transition duration-300 hover:border-indigo-500 text-center">
+            <div class="upload-icon text-indigo-500 mb-6">
+                <i class="fas fa-file-word fa-5x"></i>
             </div>
-            <h3 class="value-title">Perfect Style Preservation</h3>
-            <p class="value-description">
-                Maintains Word's built-in styles (EndnoteText, EndnoteReference, Hyperlink) ensuring your document 
-                meets academic and publication standards.
-            </p>
-            <span class="value-metric">100% Compatibility</span>
+            <h3 class="text-2xl font-semibold text-gray-700 mb-2">Upload Your Manuscript (.docx)</h3>
+            <p class="text-gray-500 mb-8">All processing is done securely within your session.</p>
+            <input type="file" name="file" accept=".docx" required class="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100 mb-6 mx-auto">
+            <button type="submit" class="btn bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-3 px-8 rounded-full shadow-lg transition duration-150">
+                Start Review
+            </button>
+        </form>
+        {% else %}
+        
+        <!-- Review State -->
+        <div id="notes-list" class="space-y-6">
+            <div class="p-10 text-center text-gray-500">
+                <i class="fas fa-spinner fa-spin mr-2"></i> Loading notes...
+            </div>
         </div>
-    </div>
-    
-    <!-- Main Application Container -->
-    <div class="app-container">
-        <!-- Upload Section -->
-        <div class="upload-section" 
-             x-show="!documentLoaded"
-             @dragover.prevent="dragover = true"
-             @dragleave.prevent="dragover = false"
-             @drop.prevent="handleDrop($event)"
-             :class="{ 'dragover': dragover }">
-            <div class="upload-icon">
-                <i class="ph-file-doc-fill"></i>
-            </div>
-            <h2 class="upload-title">Upload Your Word Document</h2>
-            <p class="upload-subtitle">Drag and drop your .docx file here, or click to browse</p>
+
+        <script id="publisher-data" type="application/json">
+            {{ publisher_map | tojson }}
+        </script>
+
+        <script>
+            // --- DATA LOADING & SETUP ---
+            let PUBLISHER_MAP = {
+                'Harvard University Press': 'Cambridge, MA',
+                'MIT Press': 'Cambridge, MA',
+                'Yale University Press': 'New Haven',
+                'Princeton University Press': 'Princeton',
+                'University of California Press': 'Berkeley',
+                'University of Chicago Press': 'Chicago',
+                'Columbia University Press': 'New York'
+            };
+
+            try {
+                const rawData = document.getElementById('publisher-data').textContent;
+                const tagCheck = '{' + '{ publisher_map';
+                if (rawData && !rawData.includes(tagCheck)) {
+                    const parsed = JSON.parse(rawData);
+                    if (parsed) PUBLISHER_MAP = parsed;
+                }
+            } catch (e) {
+                console.log("Running in static mode.");
+            }
             
-            <form id="upload-form" action="/upload" method="post" enctype="multipart/form-data">
-                <input type="file" 
-                       id="file-input" 
-                       name="file" 
-                       accept=".docx" 
-                       style="display: none;"
-                       @change="handleFileSelect($event)">
-                <button type="button" 
-                        class="upload-button"
-                        onclick="document.getElementById('file-input').click()">
-                    <i class="ph-upload-simple"></i>
-                    Select Document
-                </button>
-            </form>
-        </div>
-        
-        <!-- Document Loaded State -->
-        <div class="document-loaded" :class="{ 'active': documentLoaded }">
-            <div class="document-header">
-                <div class="document-info">
-                    <div class="document-icon">
-                        <i class="ph-file-text-fill"></i>
-                    </div>
-                    <div>
-                        <div class="document-name" x-text="documentName"></div>
-                        <div class="document-meta">
-                            <span x-text="endnotesCount"></span> endnotes found · 
-                            <span x-text="documentSize"></span>
+            fetch('/get_notes').then(r => r.json()).then(data => {
+                const container = document.getElementById('notes-list');
+                container.innerHTML = ''; 
+                
+                if (data.notes.length === 0) {
+                    container.innerHTML = '<div class="p-10 bg-white rounded-lg shadow text-center text-gray-600">No endnotes found in this document.</div>';
+                    return;
+                }
+
+                data.notes.forEach(note => {
+                    const div = document.createElement('div');
+                    div.className = 'note-row bg-white p-6 rounded-xl shadow-md grid md:grid-cols-12 gap-6 items-start hover:shadow-lg transition duration-200';
+                    div.innerHTML = `
+                        <!-- Note ID Column -->
+                        <div class="note-id col-span-1 flex justify-center pt-2">
+                            <span class="text-2xl font-bold text-gray-400">${note.id}</span>
                         </div>
-                    </div>
-                </div>
-                <button class="endnote-btn" @click="resetDocument()">
-                    <i class="ph-arrow-counter-clockwise"></i>
-                    Upload New
-                </button>
-            </div>
-        </div>
-        
-        <!-- Endnotes Container -->
-        <div class="endnotes-container" :class="{ 'active': documentLoaded }">
-            <div class="endnotes-header">
-                <h2 class="endnotes-title">
-                    <i class="ph-list-numbers"></i>
-                    Endnotes
-                    <span class="endnotes-count" x-text="endnotesCount"></span>
-                </h2>
-            </div>
-            
-            <div id="endnotes-list">
-                <!-- Endnotes will be dynamically inserted here -->
-            </div>
-        </div>
-        
-        <!-- Download Section -->
-        <div class="download-section" :class="{ 'active': documentLoaded }">
-            <div class="download-content">
-                <h2 class="download-title">Your Document is Ready!</h2>
-                <p class="download-subtitle">All citations have been formatted with professional standards</p>
-                
-                <div class="stats-section">
-                    <div class="stat-card">
-                        <div class="stat-value" x-text="endnotesCount"></div>
-                        <div class="stat-label">Citations Processed</div>
-                    </div>
-                    <div class="stat-card">
-                        <div class="stat-value" x-text="timeEstimate"></div>
-                        <div class="stat-label">Hours Saved</div>
-                    </div>
-                    <div class="stat-card">
-                        <div class="stat-value">100%</div>
-                        <div class="stat-label">Style Preserved</div>
-                    </div>
-                </div>
-                
-                <button class="download-btn" onclick="window.location.href='/download'">
-                    <i class="ph-download-simple"></i>
-                    Download Formatted Document
-                </button>
-            </div>
-        </div>
-    </div>
-    
-    <!-- Search Modal -->
-    <div class="search-modal" :class="{ 'active': searchModalOpen }">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h3 class="modal-title">Find Citation</h3>
-                <button class="modal-close" @click="searchModalOpen = false">
-                    <i class="ph-x"></i>
-                </button>
-            </div>
-            
-            <div class="search-type-tabs">
-                <button class="tab-btn" 
-                        :class="{ 'active': searchType === 'book' }"
-                        @click="searchType = 'book'">
-                    <i class="ph-book"></i> Books
-                </button>
-                <button class="tab-btn" 
-                        :class="{ 'active': searchType === 'web' }"
-                        @click="searchType = 'web'">
-                    <i class="ph-globe"></i> Web/Gov
-                </button>
-            </div>
-            
-            <div class="search-input-group">
-                <i class="ph-magnifying-glass search-icon"></i>
-                <input type="text" 
-                       class="search-input" 
-                       x-model="searchQuery"
-                       @keyup.enter="performSearch()"
-                       :placeholder="searchType === 'book' ? 'Search for books...' : 'Enter URL...'">
-            </div>
-            
-            <div class="search-results" id="search-results">
-                <!-- Results will be inserted here -->
-            </div>
-        </div>
-    </div>
-    
-    <script>
-        function citationApp() {
-            return {
-                documentLoaded: {% if filename %}true{% else %}false{% endif %},
-                documentName: '{{ filename|default("") }}',
-                endnotesCount: 0,
-                documentSize: '',
-                searchModalOpen: false,
-                searchType: 'book',
-                searchQuery: '',
-                dragover: false,
-                currentEditingNote: null,
-                timeEstimate: '0',
-                
-                init() {
-                    if (this.documentLoaded) {
-                        this.loadEndnotes();
-                    }
-                },
-                
-                handleFileSelect(event) {
-                    const file = event.target.files[0];
-                    if (file) {
-                        this.uploadFile(file);
-                    }
-                },
-                
-                handleDrop(event) {
-                    this.dragover = false;
-                    const file = event.dataTransfer.files[0];
-                    if (file && file.name.endsWith('.docx')) {
-                        this.uploadFile(file);
-                    }
-                },
-                
-                uploadFile(file) {
-                    // Update UI
-                    this.documentName = file.name;
-                    this.documentSize = this.formatFileSize(file.size);
-                    
-                    // Submit form
-                    const form = document.getElementById('upload-form');
-                    const fileInput = document.getElementById('file-input');
-                    
-                    const dataTransfer = new DataTransfer();
-                    dataTransfer.items.add(file);
-                    fileInput.files = dataTransfer.files;
-                    
-                    form.submit();
-                },
-                
-                formatFileSize(bytes) {
-                    if (bytes < 1024) return bytes + ' B';
-                    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
-                    return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
-                },
-                
-                async loadEndnotes() {
-                    try {
-                        const response = await fetch('/get_notes');
-                        const data = await response.json();
-                        this.displayEndnotes(data.notes);
-                        this.endnotesCount = data.notes.length;
-                        // Estimate 3 minutes saved per endnote
-                        this.timeEstimate = (data.notes.length * 3 / 60).toFixed(1);
-                    } catch (error) {
-                        console.error('Error loading endnotes:', error);
-                    }
-                },
-                
-                displayEndnotes(notes) {
-                    const container = document.getElementById('endnotes-list');
-                    container.innerHTML = notes.map(note => `
-                        <div class="endnote-item">
-                            <div class="endnote-number">${note.id}</div>
-                            <div class="endnote-content">${note.html || 'Empty endnote'}</div>
-                            <div class="endnote-actions">
-                                <button class="endnote-btn" onclick="window.app.editNote(${note.id}, '${note.clean_term}')">
-                                    <i class="ph-pencil"></i> Edit
-                                </button>
-                                <button class="endnote-btn" onclick="window.app.searchFor('${note.clean_term}')">
-                                    <i class="ph-magnifying-glass"></i> Find Citation
-                                </button>
+
+                        <!-- Editor and Search Results Column -->
+                        <div class="col-span-12 md:col-span-8 space-y-4">
+                            <!-- Rich Text Editor -->
+                            <div class="editor-container relative">
+                                <div class="rich-editor-pro" id="editor-${note.id}" contenteditable="true" 
+                                     onblur="saveNote('${note.id}')">${note.html}</div>
+                                <div class="save-status absolute bottom-0 right-0 mt-1 mr-2 text-xs font-medium text-green-600 transition duration-500 opacity-0" id="status-${note.id}">
+                                    <i class="fas fa-check-circle mr-1"></i> Saved
+                                </div>
+                            </div>
+                            
+                            <!-- Search Results Panel -->
+                            <div class="results-panel border border-indigo-200 bg-indigo-50 p-3 rounded-lg max-h-72 overflow-y-auto" id="results-${note.id}">
+                                <!-- Results populate here -->
                             </div>
                         </div>
-                    `).join('');
-                },
+
+                        <!-- Search Controls Column -->
+                        <div class="actions col-span-12 md:col-span-3 space-y-3 pt-2">
+                            <div class="search-wrapper flex space-x-2">
+                                <input type="text" class="search-input w-full py-2 px-3 border border-gray-300 rounded-lg text-sm focus:ring-indigo-500 focus:border-indigo-500 shadow-sm" id="query-${note.id}" 
+                                       value="${note.clean_term}" placeholder="Author/Title or URL..."
+                                       onkeypress="if(event.key === 'Enter') searchCitation('${note.id}')">
+                                <button class="btn bg-gray-200 hover:bg-gray-300 text-gray-700 py-2 px-3 rounded-lg shadow-sm" onclick="clearQuery('${note.id}')" title="Clear Search">
+                                    <i class="fas fa-times"></i>
+                                </button>
+                            </div>
+                            <button class="btn btn-primary w-full py-2.5 rounded-lg shadow-md" onclick="searchCitation('${note.id}')">
+                                <i class="fas fa-search mr-2"></i> Find Source
+                            </button>
+                            <div class="loader text-center text-sm text-indigo-700 mt-2" id="loader-${note.id}">
+                                <i class="fas fa-spinner fa-spin mr-2"></i> Searching...
+                            </div>
+                        </div>
+                    `;
+                    container.appendChild(div);
+                });
+            });
+
+            // --- FUNCTIONALITY (Logic remains the same as V19/V20) ---
+
+            function clearQuery(id) {
+                const input = document.getElementById(`query-${id}`);
+                input.value = '';
+                input.focus();
+            }
+
+            function searchCitation(id) {
+                const query = document.getElementById(`query-${id}`).value;
+                if (!query.trim()) return;
+
+                const loader = document.getElementById(`loader-${id}`);
+                const panel = document.getElementById(`results-${id}`);
                 
-                editNote(id, searchTerm) {
-                    this.currentEditingNote = id;
-                    this.searchQuery = searchTerm;
-                    this.searchModalOpen = true;
-                },
-                
-                searchFor(searchTerm) {
-                    this.searchQuery = searchTerm;
-                    this.searchModalOpen = true;
-                    this.searchType = searchTerm.startsWith('http') ? 'web' : 'book';
-                },
-                
-                async performSearch() {
-                    const resultsContainer = document.getElementById('search-results');
-                    resultsContainer.innerHTML = '<div class="loading-spinner"></div>';
+                loader.style.display = 'block';
+                panel.style.display = 'none';
+                panel.innerHTML = '';
+
+                fetch('/search_book', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({query: query})
+                })
+                .then(r => r.json())
+                .then(data => {
+                    loader.style.display = 'none';
+                    panel.style.display = 'block';
                     
-                    try {
-                        const response = await fetch('/search_book', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ query: this.searchQuery })
-                        });
-                        
-                        const data = await response.json();
-                        this.displaySearchResults(data.items);
-                    } catch (error) {
-                        resultsContainer.innerHTML = '<p>Error searching. Please try again.</p>';
-                    }
-                },
-                
-                displaySearchResults(items) {
-                    const resultsContainer = document.getElementById('search-results');
-                    
-                    if (!items || items.length === 0) {
-                        resultsContainer.innerHTML = '<p>No results found.</p>';
+                    if (data.items.length === 0) {
+                        panel.innerHTML = '<div class="p-3 text-center text-gray-500">No matching sources found.</div>';
                         return;
                     }
-                    
-                    resultsContainer.innerHTML = items.map(item => `
-                        <div class="result-item" onclick="window.app.selectResult('${item.id}')">
-                            <div class="result-title">${item.title}</div>
-                            <div class="result-meta">
-                                ${item.authors ? item.authors.join(', ') : ''} 
-                                ${item.publisher ? '· ' + item.publisher : ''} 
-                                ${item.year ? '(' + item.year + ')' : ''}
-                                ${item.url ? '· ' + item.url : ''}
+
+                    data.items.forEach(item => {
+                        if (!item.city && PUBLISHER_MAP[item.publisher]) {
+                            item.city = PUBLISHER_MAP[item.publisher];
+                        }
+
+                        const style = document.getElementById('style-selector').value;
+                        const citationHTML = formatCitation(item, style);
+                        const citationEncoded = encodeURIComponent(citationHTML);
+                        
+                        let icon = '<i class="fas fa-book text-indigo-500"></i>';
+                        if (item.type === 'gov') icon = '<i class="fas fa-landmark text-green-600"></i>';
+                        else if (item.type === 'web') icon = '<i class="fas fa-globe text-blue-500"></i>';
+                        
+                        let meta = item.authors.join(', ') + ' (' + item.year + ')';
+                        if (item.type === 'web' || item.type === 'gov') {
+                            meta = item.domain; // Use domain for meta preview
+                        }
+
+                        const card = document.createElement('div');
+                        card.className = 'result-card bg-white p-3 border border-gray-200 rounded-lg mb-2 shadow-sm';
+                        card.innerHTML = `
+                            <div class="flex items-start justify-between">
+                                <span class="result-title text-sm font-semibold text-gray-800">${icon} ${item.title}</span>
+                                ${item.type === 'gov' ? '<span class="text-xs text-green-700 bg-green-100 px-2 py-0.5 rounded-full">Government</span>' : ''}
                             </div>
-                        </div>
-                    `).join('');
-                },
-                
-                async selectResult(resultId) {
-                    // In a real implementation, this would update the endnote
-                    console.log('Selected result:', resultId);
-                    this.searchModalOpen = false;
-                    
-                    // Show success message
-                    alert('Citation updated successfully!');
-                    
-                    // Reload endnotes
-                    this.loadEndnotes();
-                },
-                
-                resetDocument() {
-                    if (confirm('Are you sure you want to upload a new document?')) {
-                        window.location.href = '/reset';
-                    }
-                }
+                            <div class="result-meta text-xs text-gray-500 mt-1">${meta}</div>
+                            <div class="preview-badge text-xs bg-gray-50 p-2 rounded-md border border-gray-100 mt-2">${citationHTML}</div>
+                            <div class="card-actions flex justify-end space-x-2 mt-3">
+                                <button class="btn-action btn-replace bg-red-500 hover:bg-red-600 text-white text-xs py-1.5 px-3 rounded-md" onclick="applyCitation('${id}', '${citationEncoded}', 'replace')">Replace</button>
+                                <button class="btn-action btn-append bg-green-500 hover:bg-green-600 text-white text-xs py-1.5 px-3 rounded-md" onclick="applyCitation('${id}', '${citationEncoded}', 'append')">+ Append</button>
+                            </div>
+                        `;
+                        panel.appendChild(card);
+                    });
+                });
             }
-        }
-        
-        // Make app accessible globally
-        window.app = citationApp();
-    </script>
+
+            function formatCitation(item, style) {
+                let citation = "";
+                
+                if (item.type === 'web' || item.type === 'gov') {
+                    // 1. Author (Agency Name)
+                    let authorPrefix = "";
+                    if (item.authors && item.authors.length > 0) {
+                        authorPrefix = item.authors.join(', ') + ", ";
+                    }
+                    
+                    // 2. Date
+                    let datePart = "";
+                    if (item.last_updated) {
+                         datePart += `last updated ${item.last_updated}, `;
+                    }
+                    datePart += `accessed ${item.access_date}`;
+                    
+                    // 3. Link (CRITICAL: Link text and href MUST be identical for reliable Word conversion)
+                    const link = `<a href="${item.url}">${item.url}</a>`;
+
+                    if (style === 'chicago') {
+                        citation = `${authorPrefix}“${item.title},” ${datePart}, ${link}.`;
+                    } else if (style === 'mla') {
+                        citation = `${authorPrefix}“${item.title}.” <em>Web</em>. ${datePart} &lt;${link}&gt;.`;
+                    } else if (style === 'apa') {
+                        citation = `${authorPrefix}${item.title}. Retrieved ${item.access_date}, from ${link}`;
+                    }
+                    return citation;
+                }
+
+                const authors = item.authors.join(', ');
+                if (style === 'chicago') {
+                    citation = `${authors}, <em>${item.title}</em>`;
+                    let pubParts = [];
+                    if (item.city) pubParts.push(item.city);
+                    if (item.publisher) pubParts.push(item.publisher);
+                    if (item.year) pubParts.push(item.year);
+                    if (pubParts.length > 0) citation += ` (${pubParts.join(': ')})`;
+                    citation += ".";
+                } 
+                else if (style === 'mla') {
+                    citation = `${authors}. <em>${item.title}</em>. ${item.publisher}, ${item.year}.`;
+                }
+                else if (style === 'apa') {
+                    citation = `${authors} (${item.year}). <em>${item.title}</em>. ${item.publisher}.`;
+                }
+                return citation;
+            }
+
+            function applyCitation(id, encodedHtml, mode) {
+                const newHtml = decodeURIComponent(encodedHtml);
+                const editor = document.getElementById(`editor-${id}`);
+                
+                if (mode === 'replace') {
+                    editor.innerHTML = newHtml;
+                } else if (mode === 'append') {
+                    let currentHtml = editor.innerHTML.trim();
+                    const textContent = editor.innerText.trim();
+                    let separator = "; ";
+                    if (textContent.endsWith('.')) separator = " ";
+                    else if (textContent.length === 0) separator = "";
+                    editor.innerHTML = currentHtml + separator + newHtml;
+                }
+                document.getElementById(`results-${id}`).style.display = 'none';
+                saveNote(id);
+            }
+
+            function saveNote(id) {
+                const editor = document.getElementById(`editor-${id}`);
+                const htmlContent = editor.innerHTML;
+                const status = document.getElementById(`status-${id}`);
+                fetch('/update_note', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({id: id, html: htmlContent})
+                }).then(() => {
+                    status.style.opacity = '1';
+                    setTimeout(() => status.style.opacity = '0', 2000);
+                });
+            }
+        </script>
+        {% endif %}
+    </div>
 </body>
 </html>
