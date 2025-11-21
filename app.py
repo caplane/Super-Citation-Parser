@@ -135,7 +135,7 @@ def get_agency_name(domain):
 def fetch_web_metadata(url):
     if not url.startswith('http'): url = 'http://' + url
     
-    # We are no longer using short_link
+    # URL SHORTENER REMOVED
     
     try:
         parsed_uri = urlparse(url)
@@ -152,7 +152,6 @@ def fetch_web_metadata(url):
         clean_filename = unquote(slug).replace('_', ' ').replace('-', ' ').title()
         
         if not clean_filename or len(clean_filename) < 5:
-             # Use the domain name if the slug is generic
              clean_filename = domain.split('.')[0].title() 
 
         # 2. Try to fetch real title and last updated date
@@ -162,6 +161,8 @@ def fetch_web_metadata(url):
         }
         
         last_updated = None
+        page_title = clean_filename # Start with heuristic title
+        
         try:
             response = requests.get(url, headers=headers, timeout=7)
             if response.status_code == 200:
@@ -169,18 +170,18 @@ def fetch_web_metadata(url):
                 title_match = re.search(r'<title>(.*?)</title>', response.text, re.IGNORECASE | re.DOTALL)
                 if title_match:
                     raw_title = title_match.group(1).strip()
+                    # Remove " | Agency Name" suffixes
                     raw_title = re.split(r'\s+[|\-]\s+', raw_title)[0]
                     # Filter out bad titles
-                    if "Just a moment" not in raw_title and "Access Denied" not in raw_title:
+                    if "Just a moment" not in raw_title and "Access Denied" not in raw_title and raw_title:
                         page_title = raw_title
-                        # Use the scraped title
-                        clean_filename = page_title
                 
-                # Try to scrape Last Modified/Published Date from headers (less reliable)
+                # Try to scrape Last Modified/Published Date from headers 
                 if 'Last-Modified' in response.headers:
-                    last_updated = datetime.strptime(response.headers['Last-Modified'][:25], '%a, %d %b %Y %H:%M:%S').strftime("%B %d, %Y")
-                # Fallback to general content searching for 'Updated' or 'Published' text (too complex for microservice)
-
+                    try:
+                        last_updated = datetime.strptime(response.headers['Last-Modified'][:25], '%a, %d %b %Y %H:%M:%S').strftime("%B %d, %Y")
+                    except:
+                         pass # Ignore if date parsing fails
         except:
             pass # Fallback to URL-based title if request fails
 
@@ -189,9 +190,9 @@ def fetch_web_metadata(url):
         
         return [{
             'type': result_type, 
-            'title': clean_filename, 
+            'title': page_title, 
             'authors': [author_name] if author_name else [], 
-            'publisher': '', 
+            'publisher': 'U.S. Government' if is_gov else '', 
             'year': '', 
             'url': url, 
             'last_updated': last_updated,
