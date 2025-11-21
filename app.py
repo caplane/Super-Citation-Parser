@@ -14,7 +14,7 @@ from datetime import datetime
 from urllib.parse import urlparse, unquote
 
 app = Flask(__name__)
-app.config['SECRET_KEY'] = 'production-key-v18-url-fix'
+app.config['SECRET_KEY'] = 'production-key-v19-style-preservation'
 
 # ==================== GLOBAL STORAGE ====================
 # Storage for temporary file paths, keyed by user session ID
@@ -363,90 +363,161 @@ def write_updated_note(user_data, note_id, html_content):
     
     for en in dom.getElementsByTagName('w:endnote'):
         if en.getAttribute('w:id') == str(note_id):
-            p = en.getElementsByTagName('w:p')[0]
-            ref_run = None
-            for run in p.getElementsByTagName('w:r'):
-                if run.getElementsByTagName('w:endnoteRef'):
-                    ref_run = run
-                    break
-            while p.hasChildNodes(): p.removeChild(p.firstChild)
-            pPr = dom.createElement('w:pPr')
-            pStyle = dom.createElement('w:pStyle')
-            pStyle.setAttribute('w:val', 'EndnoteText')
-            pPr.appendChild(pStyle)
-            p.appendChild(pPr)
-            if ref_run:
-                p.appendChild(ref_run)
-                r = dom.createElement('w:r')
-                t = dom.createElement('w:t')
-                t.setAttribute('xml:space', 'preserve')
-                t.appendChild(dom.createTextNode(" "))
-                r.appendChild(t)
-                p.appendChild(r)
+            # Get all paragraphs in this endnote
+            paragraphs = en.getElementsByTagName('w:p')
             
-            # HYPERLINK PARSER: Split by <a> tags or <em> tags
-            tokens = re.split(r'(<a href="[^"]+">.*?</a>|<em>.*?</em>)', html_content)
-            
-            for token in tokens:
-                if not token: continue
-                token = token.replace('&nbsp;', ' ').replace('&amp;', '&')
+            # Work with the first paragraph (main content)
+            if paragraphs:
+                p = paragraphs[0]
                 
-                # Case 1: Hyperlink (New or Existing)
-                if token.startswith('<a href='):
-                    match = re.match(r'<a href="([^"]+)">(.*?)</a>', token)
-                    if match:
-                        url = match.group(1)
-                        text = match.group(2)
-                        
-                        r_id = rel_mgr.get_or_create_hyperlink(url)
-                        
-                        hlink = dom.createElement('w:hyperlink')
-                        hlink.setAttribute('r:id', r_id)
-                        
-                        run = dom.createElement('w:r')
+                # Find and preserve the endnote reference run
+                ref_run = None
+                for run in p.getElementsByTagName('w:r'):
+                    if run.getElementsByTagName('w:endnoteRef'):
+                        ref_run = run.cloneNode(deep=True)  # Clone to preserve all properties
+                        break
+                
+                # Clear the paragraph content but keep the paragraph element
+                while p.hasChildNodes(): 
+                    p.removeChild(p.firstChild)
+                
+                # Re-add paragraph properties with EndnoteText style
+                pPr = dom.createElement('w:pPr')
+                pStyle = dom.createElement('w:pStyle')
+                pStyle.setAttribute('w:val', 'EndnoteText')
+                pPr.appendChild(pStyle)
+                p.appendChild(pPr)
+                
+                # Re-add the endnote reference with proper style
+                if ref_run:
+                    # Ensure the reference has the proper style
+                    rPr_elements = ref_run.getElementsByTagName('w:rPr')
+                    if not rPr_elements:
                         rPr = dom.createElement('w:rPr')
                         rStyle = dom.createElement('w:rStyle')
-                        rStyle.setAttribute('w:val', 'Hyperlink')
+                        rStyle.setAttribute('w:val', 'EndnoteReference')
                         rPr.appendChild(rStyle)
-                        
-                        color = dom.createElement('w:color')
-                        color.setAttribute('w:val', '0000FF')
-                        rPr.appendChild(color)
-                        u = dom.createElement('w:u')
-                        u.setAttribute('w:val', 'single')
-                        rPr.appendChild(u)
-                        
-                        run.appendChild(rPr)
-                        t = dom.createElement('w:t')
-                        t.appendChild(dom.createTextNode(text))
-                        run.appendChild(t)
-                        
-                        hlink.appendChild(run)
-                        p.appendChild(hlink)
-                        
-                        # --- CRITICAL FIX: Ensure the relationships XML is saved immediately ---
-                        rel_mgr._save()
-                        continue
-
-                # Case 2: Text (Italic or Plain)
-                run = dom.createElement('w:r')
-                rPr = dom.createElement('w:rPr')
-                rFonts = dom.createElement('w:rFonts')
-                rFonts.setAttribute('w:ascii', 'Times New Roman')
-                rFonts.setAttribute('w:hAnsi', 'Times New Roman')
-                rPr.appendChild(rFonts)
-                run.appendChild(rPr)
+                        ref_run.insertBefore(rPr, ref_run.firstChild)
+                    else:
+                        # Check if EndnoteReference style exists
+                        has_style = False
+                        for rPr in rPr_elements:
+                            if rPr.getElementsByTagName('w:rStyle'):
+                                has_style = True
+                                break
+                        if not has_style and rPr_elements:
+                            rStyle = dom.createElement('w:rStyle')
+                            rStyle.setAttribute('w:val', 'EndnoteReference')
+                            rPr_elements[0].appendChild(rStyle)
+                    
+                    p.appendChild(ref_run)
+                    
+                    # Add space after endnote reference
+                    r = dom.createElement('w:r')
+                    t = dom.createElement('w:t')
+                    t.setAttribute('xml:space', 'preserve')
+                    t.appendChild(dom.createTextNode(" "))
+                    r.appendChild(t)
+                    p.appendChild(r)
                 
-                text_content = token
-                if token.startswith('<em>'):
-                    text_content = token[4:-5]
-                    run.getElementsByTagName('w:rPr')[0].appendChild(dom.createElement('w:i'))
+                # Parse and add the HTML content
+                tokens = re.split(r'(<a href="[^"]+">.*?</a>|<em>.*?</em>)', html_content)
                 
-                t = dom.createElement('w:t')
-                t.setAttribute('xml:space', 'preserve')
-                t.appendChild(dom.createTextNode(text_content))
-                run.appendChild(t)
-                p.appendChild(run)
+                for token in tokens:
+                    if not token: continue
+                    token = token.replace('&nbsp;', ' ').replace('&amp;', '&')
+                    
+                    # Case 1: Hyperlink
+                    if token.startswith('<a href='):
+                        match = re.match(r'<a href="([^"]+)">(.*?)</a>', token)
+                        if match:
+                            url = match.group(1)
+                            text = match.group(2)
+                            
+                            r_id = rel_mgr.get_or_create_hyperlink(url)
+                            
+                            hlink = dom.createElement('w:hyperlink')
+                            hlink.setAttribute('r:id', r_id)
+                            
+                            run = dom.createElement('w:r')
+                            rPr = dom.createElement('w:rPr')
+                            
+                            # Add Hyperlink style
+                            rStyle = dom.createElement('w:rStyle')
+                            rStyle.setAttribute('w:val', 'Hyperlink')
+                            rPr.appendChild(rStyle)
+                            
+                            # Add blue color
+                            color = dom.createElement('w:color')
+                            color.setAttribute('w:val', '0000FF')
+                            rPr.appendChild(color)
+                            
+                            # Add underline
+                            u = dom.createElement('w:u')
+                            u.setAttribute('w:val', 'single')
+                            rPr.appendChild(u)
+                            
+                            run.appendChild(rPr)
+                            t = dom.createElement('w:t')
+                            t.appendChild(dom.createTextNode(text))
+                            run.appendChild(t)
+                            
+                            hlink.appendChild(run)
+                            p.appendChild(hlink)
+                            
+                            # Save relationships immediately
+                            rel_mgr._save()
+                            continue
+                    
+                    # Case 2: Regular text (italic or plain)
+                    run = dom.createElement('w:r')
+                    rPr = dom.createElement('w:rPr')
+                    
+                    # Always use Times New Roman for consistency
+                    rFonts = dom.createElement('w:rFonts')
+                    rFonts.setAttribute('w:ascii', 'Times New Roman')
+                    rFonts.setAttribute('w:hAnsi', 'Times New Roman')
+                    rPr.appendChild(rFonts)
+                    
+                    run.appendChild(rPr)
+                    
+                    text_content = token
+                    if token.startswith('<em>'):
+                        # Extract italic text
+                        text_content = token[4:-5]
+                        # Add italic formatting
+                        i_elem = dom.createElement('w:i')
+                        run.getElementsByTagName('w:rPr')[0].appendChild(i_elem)
+                    
+                    t = dom.createElement('w:t')
+                    # Preserve spaces
+                    if text_content.startswith(' ') or text_content.endswith(' '):
+                        t.setAttribute('xml:space', 'preserve')
+                    t.appendChild(dom.createTextNode(text_content))
+                    run.appendChild(t)
+                    p.appendChild(run)
+            
+            # Ensure any additional empty paragraphs have EndnoteText style
+            for para_idx in range(1, len(paragraphs)):
+                para = paragraphs[para_idx]
+                # Check if paragraph has the style
+                has_style = False
+                for pPr in para.getElementsByTagName('w:pPr'):
+                    if pPr.getElementsByTagName('w:pStyle'):
+                        has_style = True
+                        break
+                
+                if not has_style:
+                    # Add EndnoteText style
+                    pPr = dom.createElement('w:pPr')
+                    pStyle = dom.createElement('w:pStyle')
+                    pStyle.setAttribute('w:val', 'EndnoteText')
+                    pPr.appendChild(pStyle)
+                    # Insert at the beginning of the paragraph
+                    if para.firstChild:
+                        para.insertBefore(pPr, para.firstChild)
+                    else:
+                        para.appendChild(pPr)
                 
     with open(path, 'w', encoding='utf-8') as f:
         f.write(dom.toxml())
