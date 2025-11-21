@@ -89,8 +89,6 @@
 
         <!-- 
             DATA INJECTION BLOCK 
-            This approach prevents Syntax Errors when viewing the file in a 
-            static browser/preview where Jinja2 is not processed.
         -->
         <script id="publisher-data" type="application/json">
             {{ publisher_map | tojson }}
@@ -111,8 +109,9 @@
             // 2. Try to Load Server Data (Production Mode)
             try {
                 const rawData = document.getElementById('publisher-data').textContent;
-                // Only parse if the server actually replaced the Jinja tag
-                if (rawData && !rawData.includes('{{ publisher_map')) {
+                // We split the check string so Jinja doesn't try to parse it during rendering
+                const tagCheck = '{' + '{ publisher_map';
+                if (rawData && !rawData.includes(tagCheck)) {
                     const parsed = JSON.parse(rawData);
                     if (parsed) PUBLISHER_MAP = parsed;
                 }
