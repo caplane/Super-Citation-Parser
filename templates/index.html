@@ -58,7 +58,7 @@
 <body>
     <div class="container">
         <div class="header">
-            <h1>CiteResolver <span class="version-tag">v13.0</span></h1>
+            <h1>CiteResolver <span class="version-tag">v17.0</span></h1>
             {% if filename %}
             <div class="controls">
                 <label>Format Style:</label>
@@ -241,6 +241,7 @@
                     datePart += `accessed ${item.access_date}`;
                     
                     // 3. Link (Always use full URL for both text and href)
+                    // Note: The text displayed is the full URL, and the href target is also the full URL.
                     const link = `<a href="${item.url}">${item.url}</a>`;
 
                     if (style === 'chicago') {
