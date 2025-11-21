@@ -14,7 +14,7 @@ from datetime import datetime
 from urllib.parse import urlparse, unquote
 
 app = Flask(__name__)
-app.config['SECRET_KEY'] = 'production-key-v11-agency-aware'
+app.config['SECRET_KEY'] = 'production-key-v12-robust-gov-fix'
 
 # ==================== GLOBAL STORAGE ====================
 USER_DATA_STORE = {}
@@ -43,6 +43,7 @@ PUBLISHER_PLACE_MAP = {
 }
 
 # Maps .gov domains to proper Agency Author Names
+# Added specific mappings for FDA and Regulations.gov based on your test cases
 GOV_AGENCY_MAP = {
     'ferc.gov': 'Federal Energy Regulatory Commission',
     'epa.gov': 'Environmental Protection Agency',
@@ -66,7 +67,8 @@ GOV_AGENCY_MAP = {
     'senate.gov': 'U.S. Senate',
     'house.gov': 'U.S. House of Representatives',
     'bls.gov': 'U.S. Bureau of Labor Statistics',
-    'dot.gov': 'U.S. Department of Transportation'
+    'dot.gov': 'U.S. Department of Transportation',
+    'regulations.gov': 'U.S. Government' 
 }
 
 # ==================== RELATIONSHIP MANAGER ====================
@@ -135,6 +137,12 @@ def get_user_data():
     return USER_DATA_STORE.get(session['user_id'])
 
 def shorten_url(long_url):
+    """
+    Robust URL Shortener.
+    1. Tries Bitly (if token).
+    2. Tries TinyURL.
+    3. Returns ORIGINAL URL if both fail (safety fallback).
+    """
     if BITLY_ACCESS_TOKEN:
         try:
             headers = {'Authorization': f'Bearer {BITLY_ACCESS_TOKEN}', 'Content-Type': 'application/json'}
@@ -149,6 +157,8 @@ def shorten_url(long_url):
         if response.ok and response.text.startswith('http'):
             return response.text
     except Exception as e: print(f"TinyURL Error: {e}")
+    
+    # FALLBACK: Return the original long URL instead of None to prevent breaks
     return long_url
 
 def clean_search_term(text):
@@ -159,16 +169,16 @@ def clean_search_term(text):
 
 def get_agency_name(domain):
     """Look up proper agency name from GOV_AGENCY_MAP"""
-    # Remove subdomains (e.g. www.ferc.gov -> ferc.gov)
     parts = domain.split('.')
     if len(parts) >= 2:
         root_domain = f"{parts[-2]}.{parts[-1]}"
         if root_domain in GOV_AGENCY_MAP:
             return GOV_AGENCY_MAP[root_domain]
-    return "U.S. Government" # Fallback if agency not in map
+    return "U.S. Government"
 
 def fetch_web_metadata(url):
     if not url.startswith('http'): url = 'http://' + url
+    
     short_link = shorten_url(url)
     
     try:
@@ -177,7 +187,6 @@ def fetch_web_metadata(url):
         is_gov = domain.endswith('.gov')
         result_type = 'gov' if is_gov else 'web'
         
-        # Determine Author based on Agency Map
         author_name = get_agency_name(domain) if is_gov else ""
         
         path = parsed_uri.path.lower()
@@ -190,30 +199,45 @@ def fetch_web_metadata(url):
                 'type': result_type, 
                 'title': title, 
                 'authors': [author_name] if author_name else [], 
-                'publisher': '', 
+                'publisher': 'U.S. Government' if is_gov else '', 
                 'year': '', 
-                'url': url,
+                'url': url, 
                 'short_link': short_link,
                 'domain': domain, 
                 'access_date': datetime.now().strftime("%B %d, %Y"), 
                 'id': 'web_pdf_result'
             }]
 
-        # HTML Page Handler
-        headers = {'User-Agent': 'Mozilla/5.0'}
-        response = requests.get(url, headers=headers, timeout=5)
-        title_match = re.search(r'<title>(.*?)</title>', response.text, re.IGNORECASE | re.DOTALL)
+        # HTML Page Handler - Uses headers to bypass "Just a moment..." blocks
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8'
+        }
         
         page_title = "Unknown Document"
-        if title_match:
-            page_title = title_match.group(1).strip()
-            page_title = re.split(r'\s+[|\-]\s+', page_title)[0]
-        
+        try:
+            response = requests.get(url, headers=headers, timeout=5)
+            if response.status_code == 200:
+                title_match = re.search(r'<title>(.*?)</title>', response.text, re.IGNORECASE | re.DOTALL)
+                if title_match:
+                    raw_title = title_match.group(1).strip()
+                    # Remove " | Agency Name" suffixes
+                    raw_title = re.split(r'\s+[|\-]\s+', raw_title)[0]
+                    # Filter out bad titles
+                    if "Just a moment" not in raw_title and "Access Denied" not in raw_title:
+                        page_title = raw_title
+                    else:
+                        # Fallback to URL slug if title is blocked
+                        page_title = unquote(os.path.basename(parsed_uri.path.rstrip('/'))).replace('-', ' ').title()
+        except:
+            # Fallback to URL slug if request fails
+            page_title = unquote(os.path.basename(parsed_uri.path.rstrip('/'))).replace('-', ' ').title()
+
         return [{
             'type': result_type, 
             'title': page_title, 
             'authors': [author_name] if author_name else [], 
-            'publisher': '', 
+            'publisher': 'U.S. Government' if is_gov else '', 
             'year': '', 
             'url': url, 
             'short_link': short_link,
