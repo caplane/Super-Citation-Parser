@@ -58,7 +58,7 @@
 <body>
     <div class="container">
         <div class="header">
-            <h1>CiteResolver <span class="version-tag">v9.0</span></h1>
+            <h1>CiteResolver <span class="version-tag">v10.0</span></h1>
             {% if filename %}
             <div class="controls">
                 <label>Format Style:</label>
@@ -204,7 +204,7 @@
                         
                         let meta = item.authors.join(', ') + ' (' + item.year + ')';
                         if (item.type === 'web' || item.type === 'gov') {
-                            meta = item.short_link ? item.short_link : item.domain; 
+                            meta = item.short_link ? item.short_link : item.url; 
                         }
 
                         const card = document.createElement('div');
@@ -228,6 +228,8 @@
                 
                 if (item.type === 'web' || item.type === 'gov') {
                     let authorPrefix = item.type === 'gov' ? "U.S. Government, " : "";
+                    
+                    // Use short link if valid, otherwise full url
                     const displayUrl = item.short_link || item.url;
                     const link = `<a href="${item.url}">${displayUrl}</a>`;
 
