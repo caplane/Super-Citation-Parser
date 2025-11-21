@@ -14,7 +14,7 @@ from datetime import datetime
 from urllib.parse import urlparse, unquote
 
 app = Flask(__name__)
-app.config['SECRET_KEY'] = 'production-key-v13-no-tinyurl'
+app.config['SECRET_KEY'] = 'production-key-v14-link-fix'
 
 # ==================== GLOBAL STORAGE ====================
 USER_DATA_STORE = {}
@@ -48,9 +48,11 @@ GOV_AGENCY_MAP = {
     'energy.gov': 'U.S. Department of Energy',
     'doi.gov': 'U.S. Department of the Interior',
     'justice.gov': 'U.S. Department of Justice',
-    'regulations.gov': 'U.S. Government', # Added for your test case
+    'regulations.gov': 'U.S. Government', 
     'fda.gov': 'U.S. Food and Drug Administration',
-    # ... other government agencies
+    'cdc.gov': 'Centers for Disease Control and Prevention',
+    'nih.gov': 'National Institutes of Health',
+    'usda.gov': 'U.S. Department of Agriculture',
 }
 
 # ==================== RELATIONSHIP MANAGER ====================
@@ -125,6 +127,7 @@ def clean_search_term(text):
     return text.strip()
 
 def get_agency_name(domain):
+    """Returns the official agency name based on the domain."""
     parts = domain.split('.')
     if len(parts) >= 2:
         root_domain = f"{parts[-2]}.{parts[-1]}"
@@ -132,10 +135,24 @@ def get_agency_name(domain):
             return GOV_AGENCY_MAP[root_domain]
     return "U.S. Government"
 
+def get_heuristic_title(url):
+    """Generates a title from the URL slug if scraping fails."""
+    parsed_uri = urlparse(url)
+    path = parsed_uri.path
+    slug = [s for s in path.split('/') if s][-1] if path.split('/') else ''
+    
+    # If the slug is a filename or long string, clean it up
+    clean_filename = unquote(slug).replace('_', ' ').replace('-', ' ').title()
+    
+    # Fallback to domain name if the path is generic or empty
+    if not clean_filename or len(clean_filename) < 5:
+        domain = parsed_uri.netloc.replace('www.', '')
+        return domain.split('.')[0].title() 
+        
+    return clean_filename
+
 def fetch_web_metadata(url):
     if not url.startswith('http'): url = 'http://' + url
-    
-    # URL SHORTENER REMOVED
     
     try:
         parsed_uri = urlparse(url)
@@ -143,47 +160,41 @@ def fetch_web_metadata(url):
         is_gov = domain.endswith('.gov')
         result_type = 'gov' if is_gov else 'web'
         
+        # Determine Agency Author Name (Guaranteed for .gov)
         author_name = get_agency_name(domain) if is_gov else ""
         
-        # 1. Heuristic Title from URL (Fallback)
-        path = parsed_uri.path
-        # Use last meaningful slug segment if title scraping fails
-        slug = [s for s in path.split('/') if s][-1] if path.split('/') else ''
-        clean_filename = unquote(slug).replace('_', ' ').replace('-', ' ').title()
+        last_updated = None
         
-        if not clean_filename or len(clean_filename) < 5:
-             clean_filename = domain.split('.')[0].title() 
-
-        # 2. Try to fetch real title and last updated date
+        # 1. Start with Heuristic Title as the safest option
+        page_title = get_heuristic_title(url)
+        
+        # 2. Try to fetch real title from the server
         headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8'
         }
         
-        last_updated = None
-        page_title = clean_filename # Start with heuristic title
-        
         try:
-            response = requests.get(url, headers=headers, timeout=7)
+            response = requests.get(url, headers=headers, timeout=7, allow_redirects=True)
             if response.status_code == 200:
                 # Scrape <title>
                 title_match = re.search(r'<title>(.*?)</title>', response.text, re.IGNORECASE | re.DOTALL)
                 if title_match:
                     raw_title = title_match.group(1).strip()
-                    # Remove " | Agency Name" suffixes
-                    raw_title = re.split(r'\s+[|\-]\s+', raw_title)[0]
                     # Filter out bad titles
-                    if "Just a moment" not in raw_title and "Access Denied" not in raw_title and raw_title:
-                        page_title = raw_title
+                    if not any(block_word in raw_title for block_word in ["Just a moment", "Access Denied", "Error", "404"]):
+                         # Clean title: remove generic agency names/suffixes
+                         page_title = re.sub(r' \| .*$', '', raw_title).strip()
+                         
                 
-                # Try to scrape Last Modified/Published Date from headers 
+                # Scrape Last Modified/Published Date from headers 
                 if 'Last-Modified' in response.headers:
                     try:
                         last_updated = datetime.strptime(response.headers['Last-Modified'][:25], '%a, %d %b %Y %H:%M:%S').strftime("%B %d, %Y")
                     except:
-                         pass # Ignore if date parsing fails
+                         pass
         except:
-            pass # Fallback to URL-based title if request fails
+            pass # Use heuristic title if request fails
 
         # Final cleanup for output
         access_date = datetime.now().strftime("%B %d, %Y")
