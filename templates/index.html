@@ -58,7 +58,7 @@
 <body>
     <div class="container">
         <div class="header">
-            <h1>CiteResolver <span class="version-tag">v12.0</span></h1>
+            <h1>CiteResolver <span class="version-tag">v13.0</span></h1>
             {% if filename %}
             <div class="controls">
                 <label>Format Style:</label>
@@ -204,7 +204,7 @@
                         
                         let meta = item.authors.join(', ') + ' (' + item.year + ')';
                         if (item.type === 'web' || item.type === 'gov') {
-                            meta = item.short_link ? item.short_link : item.url; 
+                            meta = item.domain; // Use domain only for meta
                         }
 
                         const card = document.createElement('div');
@@ -233,15 +233,20 @@
                         authorPrefix = item.authors.join(', ') + ", ";
                     }
                     
-                    // 2. Link logic
-                    // Prefer short link for display, full url for href if needed
-                    const displayUrl = item.short_link || item.url;
-                    const link = `<a href="${item.url}">${displayUrl}</a>`;
+                    // 2. Date
+                    let datePart = "";
+                    if (item.last_updated) {
+                         datePart += `last updated ${item.last_updated}, `;
+                    }
+                    datePart += `accessed ${item.access_date}`;
+                    
+                    // 3. Link (Always use full URL for both text and href in this version)
+                    const link = `<a href="${item.url}">${item.url}</a>`;
 
                     if (style === 'chicago') {
-                        citation = `${authorPrefix}"${item.title}," accessed ${item.access_date}, ${link}.`;
+                        citation = `${authorPrefix}“${item.title},” ${datePart}, ${link}.`;
                     } else if (style === 'mla') {
-                        citation = `${authorPrefix}"${item.title}." <em>Web</em>. ${item.access_date} &lt;${link}&gt;.`;
+                        citation = `${authorPrefix}“${item.title}.” <em>Web</em>. ${datePart} &lt;${link}&gt;.`;
                     } else if (style === 'apa') {
                         citation = `${authorPrefix}${item.title}. Retrieved ${item.access_date}, from ${link}`;
                     }
