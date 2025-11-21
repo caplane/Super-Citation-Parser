@@ -1,599 +1,407 @@
-<!DOCTYPE html>
+import os
+import zipfile
+import shutil
+import tempfile
+import re
+import json
+import requests
+import uuid
+import xml.dom.minidom as minidom
+from flask import Flask, render_template, request, jsonify, send_file, session, redirect, url_for
+from werkzeug.utils import secure_filename
+from pathlib import Path
+from datetime import datetime
+from urllib.parse import urlparse, unquote
 
-<html lang="en">
+app = Flask(__name__)
+app.config['SECRET_KEY'] = 'production-key-v10-robust-urls'
 
-<head>
+# ==================== GLOBAL STORAGE ====================
+USER_DATA_STORE = {}
 
-    <meta charset="UTF-8">
+# ==================== CONFIGURATION ====================
+BITLY_ACCESS_TOKEN = "" 
 
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+PUBLISHER_PLACE_MAP = {
+    'Harvard University Press': 'Cambridge, MA',
+    'MIT Press': 'Cambridge, MA',
+    'Yale University Press': 'New Haven',
+    'Princeton University Press': 'Princeton',
+    'Stanford University Press': 'Stanford',
+    'University of California Press': 'Berkeley',
+    'University of Chicago Press': 'Chicago',
+    'Columbia University Press': 'New York',
+    'Oxford University Press': 'Oxford',
+    'Cambridge University Press': 'Cambridge',
+    'Penguin': 'New York',
+    'Random House': 'New York',
+    'HarperCollins': 'New York',
+    'Simon & Schuster': 'New York',
+    'Farrar, Straus and Giroux': 'New York',
+    'W. W. Norton': 'New York',
+    'Knopf': 'New York'
+}
 
-    <title>CiteResolver: Smart Review</title>
+# ==================== RELATIONSHIP MANAGER ====================
+class RelationshipManager:
+    def __init__(self, extract_dir):
+        self.rels_dir = os.path.join(extract_dir, 'word', '_rels')
+        self.rels_path = os.path.join(self.rels_dir, 'endnotes.xml.rels')
+        self.relationships = []
+        self.next_id = 1
+        self._load()
 
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    def _load(self):
+        if not os.path.exists(self.rels_dir):
+            os.makedirs(self.rels_dir)
+        if os.path.exists(self.rels_path):
+            with open(self.rels_path, 'r', encoding='utf-8') as f:
+                dom = minidom.parseString(f.read())
+                for rel in dom.getElementsByTagName('Relationship'):
+                    rid = rel.getAttribute('Id')
+                    match = re.search(r'\d+', rid)
+                    if match:
+                        num_id = int(match.group())
+                        self.next_id = max(self.next_id, num_id + 1)
+                    self.relationships.append({
+                        'Id': rid,
+                        'Type': rel.getAttribute('Type'),
+                        'Target': rel.getAttribute('Target'),
+                        'TargetMode': rel.getAttribute('TargetMode')
+                    })
 
-    <style>
+    def get_or_create_hyperlink(self, url):
+        for rel in self.relationships:
+            if rel['Target'] == url and rel['Type'].endswith('/hyperlink'):
+                return rel['Id']
+        new_id = f"rId{self.next_id}"
+        self.next_id += 1
+        self.relationships.append({
+            'Id': new_id,
+            'Type': "http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink",
+            'Target': url,
+            'TargetMode': "External"
+        })
+        self._save()
+        return new_id
 
-        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; max-width: 1100px; margin: 0 auto; padding: 20px; background: #f5f7fa; color: #333; }
+    def _save(self):
+        root = minidom.Document()
+        rels_elem = root.createElement('Relationships')
+        rels_elem.setAttribute('xmlns', "http://schemas.openxmlformats.org/package/2006/relationships")
+        root.appendChild(rels_elem)
+        for rel in self.relationships:
+            node = root.createElement('Relationship')
+            node.setAttribute('Id', rel['Id'])
+            node.setAttribute('Type', rel['Type'])
+            node.setAttribute('Target', rel['Target'])
+            if rel.get('TargetMode'):
+                node.setAttribute('TargetMode', rel['TargetMode'])
+            rels_elem.appendChild(node)
+        with open(self.rels_path, 'w', encoding='utf-8') as f:
+            f.write(root.toxml())
 
-        .container { background: white; padding: 30px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.05); }
+# ==================== BACKEND LOGIC ====================
 
-        .header { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #eee; padding-bottom: 15px; margin-bottom: 20px; }
+def get_user_data():
+    if 'user_id' not in session: return None
+    return USER_DATA_STORE.get(session['user_id'])
 
-        .header h1 { margin: 0; color: #2c3e50; font-size: 1.8rem; }
+def shorten_url(long_url):
+    """
+    Robust URL Shortener.
+    1. Tries Bitly (if token).
+    2. Tries TinyURL.
+    3. Returns ORIGINAL URL if both fail (safety fallback).
+    """
+    if BITLY_ACCESS_TOKEN:
+        try:
+            headers = {'Authorization': f'Bearer {BITLY_ACCESS_TOKEN}', 'Content-Type': 'application/json'}
+            data = {"long_url": long_url, "domain": "bit.ly"}
+            response = requests.post('https://api-ssl.bitly.com/v4/shorten', headers=headers, json=data, timeout=3)
+            if response.ok: return response.json().get('link')
+        except Exception as e: print(f"Bitly Error: {e}")
 
-        .version-tag { font-size: 0.5em; color: #888; font-weight: normal; vertical-align: middle; }
+    try:
+        api_url = f"http://tinyurl.com/api-create.php?url={long_url}"
+        response = requests.get(api_url, timeout=5) # Increased timeout slightly
+        if response.ok and response.text.startswith('http'):
+            return response.text
+    except Exception as e: print(f"TinyURL Error: {e}")
+    
+    # FALLBACK: Return the original long URL instead of None to prevent breaks
+    return long_url
 
-        .controls { display: flex; gap: 15px; align-items: center; }
+def clean_search_term(text):
+    text = re.sub(r'^\s*\d+\.?\s*', '', text)
+    text = re.sub(r',?\s*pp?\.?\s*\d+(-\d+)?\.?$', '', text)
+    text = re.sub(r',?\s*\d+\.?$', '', text)
+    return text.strip()
 
-        select { padding: 8px 12px; border-radius: 4px; border: 1px solid #ddd; font-size: 14px; }
-
-        .note-row { border-bottom: 1px solid #eee; padding: 25px 0; display: grid; grid-template-columns: 40px 1fr 300px; gap: 25px; }
-
-        .note-id { font-weight: bold; color: #adb5bd; font-size: 1.2em; padding-top: 5px; }
-
+def fetch_web_metadata(url):
+    if not url.startswith('http'): url = 'http://' + url
+    
+    # Try to shorten immediately to have it ready
+    short_link = shorten_url(url)
+    
+    try:
+        parsed_uri = urlparse(url)
+        domain = parsed_uri.netloc.replace('www.', '')
+        is_gov = domain.endswith('.gov')
+        result_type = 'gov' if is_gov else 'web'
         
-
-        .editor-container { display: flex; flex-direction: column; gap: 10px; position: relative; }
-
-        .rich-editor { min-height: 60px; padding: 15px; border: 1px solid #ced4da; border-radius: 6px; font-family: "Times New Roman", serif; font-size: 1.15em; line-height: 1.5; background: #fff; transition: all 0.2s; outline: none; }
-
-        .rich-editor:focus { border-color: #007bff; box-shadow: 0 0 0 3px rgba(0,123,255,0.1); }
-
-        .rich-editor em { font-style: italic; background-color: #fff3cd; padding: 0 2px; border-radius: 2px; } 
-
-        .rich-editor a { color: #007bff; text-decoration: underline; cursor: pointer; }
-
+        path = parsed_uri.path.lower()
         
+        # PDF Handler
+        if path.endswith('.pdf'):
+            filename = unquote(os.path.basename(parsed_uri.path))
+            title = filename.replace('.pdf', '').replace('_', ' ').replace('-', ' ').title()
+            return [{
+                'type': result_type, 
+                'title': title, 
+                'authors': [], 
+                'publisher': 'U.S. Government' if is_gov else '', 
+                'year': '', 
+                'url': url, # Original Long URL for the href
+                'short_link': short_link, # Short URL for the text display
+                'domain': domain, 
+                'access_date': datetime.now().strftime("%B %d, %Y"), 
+                'id': 'web_pdf_result'
+            }]
 
-        .actions { display: flex; flex-direction: column; gap: 10px; }
-
-        .search-wrapper { display: flex; gap: 5px; align-items: stretch; }
-
-        .search-input { flex-grow: 1; padding: 8px 12px; border: 1px solid #dee2e6; border-radius: 4px; font-size: 0.95em; color: #495057; transition: 0.2s; }
-
-        .search-input:focus { border-color: #007bff; outline: none; }
-
-        .btn { border: none; border-radius: 4px; cursor: pointer; font-weight: 500; transition: 0.2s; display: inline-flex; align-items: center; justify-content: center; gap: 6px; font-size: 14px; text-decoration: none; }
-
-        .btn-primary { background: #007bff; color: white; padding: 10px 16px; width: 100%; }
-
-        .btn-primary:hover { background: #0056b3; }
-
-        .btn-secondary { background: #6c757d; color: white; padding: 0 12px; }
-
-        .btn-secondary:hover { background: #5a6268; }
-
-        .btn-download { background: #28a745; color: white; padding: 10px 20px; font-weight: 600; }
-
-        .btn-download:hover { background: #218838; }
-
-        .btn-reset { background: #6c757d; color: white; padding: 10px 20px; font-weight: 600; }
-
-        .btn-reset:hover { background: #5a6268; }
-
+        # HTML Page Handler
+        headers = {'User-Agent': 'Mozilla/5.0'}
+        response = requests.get(url, headers=headers, timeout=5)
+        title_match = re.search(r'<title>(.*?)</title>', response.text, re.IGNORECASE | re.DOTALL)
         
-
-        .results-panel { display: none; background: #f8f9fa; border: 1px solid #e9ecef; border-radius: 6px; margin-top: 10px; max-height: 400px; overflow-y: auto; }
-
-        .result-card { padding: 15px; border-bottom: 1px solid #eee; background: white; }
-
-        .result-card:last-child { border-bottom: none; }
-
-        .result-card:hover { background: #f1f3f5; }
-
-        .result-title { font-weight: bold; color: #343a40; display: block; margin-bottom: 4px; font-size: 0.95em; }
-
-        .result-meta { font-size: 0.85em; color: #6c757d; margin-bottom: 10px; }
-
-        .preview-badge { background: #e7f1ff; color: #0056b3; font-size: 0.85em; padding: 8px 12px; border-radius: 4px; margin-bottom: 10px; font-family: "Times New Roman", serif; border-left: 3px solid #007bff; line-height: 1.4; }
-
-        .card-actions { display: flex; gap: 8px; justify-content: flex-end; }
-
-        .btn-action { padding: 6px 12px; font-size: 0.85em; color: white; border-radius: 4px; border: none; cursor: pointer; }
-
-        .btn-replace { background: #dc3545; }
-
-        .btn-replace:hover { background: #bd2130; }
-
-        .btn-append { background: #28a745; }
-
-        .btn-append:hover { background: #218838; }
-
-        .loader { display: none; color: #6c757d; font-style: italic; font-size: 0.9em; padding: 10px; text-align: center; }
-
-        .save-status { font-size: 0.8em; color: #28a745; opacity: 0; transition: opacity 0.5s; position: absolute; bottom: -20px; right: 0; }
-
-        .upload-box { text-align: center; padding: 80px 20px; border: 2px dashed #dee2e6; border-radius: 8px; margin-top: 20px; }
-
-        .upload-icon { color: #6c757d; margin-bottom: 20px; }
-
-    </style>
-
-</head>
-
-<body>
-
-    <div class="container">
-
-        <div class="header">
-
-            <h1>CiteResolver <span class="version-tag">v10.0</span></h1>
-
-            {% if filename %}
-
-            <div class="controls">
-
-                <label>Format Style:</label>
-
-                <select id="style-selector">
-
-                    <option value="chicago">Chicago (Notes)</option>
-
-                    <option value="mla">MLA</option>
-
-                    <option value="apa">APA</option>
-
-                </select>
-
-                <a href="/reset" class="btn btn-reset"><i class="fas fa-redo"></i> Start Over</a>
-
-                <a href="/download" class="btn btn-download"><i class="fas fa-file-export"></i> Download Document</a>
-
-            </div>
-
-            {% endif %}
-
-        </div>
-
+        page_title = "Unknown Document"
+        if title_match:
+            page_title = title_match.group(1).strip()
+            page_title = re.split(r'\s+[|\-]\s+', page_title)[0] # Clean suffix
         
-
-        {% if not filename %}
-
-        <form action="/upload" method="post" enctype="multipart/form-data" class="upload-box">
-
-            <div class="upload-icon">
-
-                <i class="fas fa-file-word fa-4x"></i>
-
-            </div>
-
-            <h3 style="margin-bottom: 10px;">Upload Manuscript</h3>
-
-            <p style="color: #666; margin-bottom: 25px;">Select a .docx file to begin reviewing citations</p>
-
-            <input type="file" name="file" accept=".docx" required style="margin-bottom: 20px;">
-
-            <br>
-
-            <button type="submit" class="btn btn-primary" style="width: auto; padding: 12px 40px;">Start Review</button>
-
-        </form>
-
-        {% else %}
-
-
-
-        <div id="notes-list">
-
-            <div style="padding: 40px; text-align: center; color: #666;">Loading notes...</div>
-
-        </div>
-
-
-
-        <script id="publisher-data" type="application/json">
-
-            {{ publisher_map | tojson }}
-
-        </script>
-
-
-
-        <script>
-
-            let PUBLISHER_MAP = {
-
-                'Harvard University Press': 'Cambridge, MA',
-
-                'MIT Press': 'Cambridge, MA',
-
-                'Yale University Press': 'New Haven',
-
-                'Princeton University Press': 'Princeton',
-
-                'University of California Press': 'Berkeley',
-
-                'University of Chicago Press': 'Chicago',
-
-                'Columbia University Press': 'New York'
-
-            };
-
-
-
-            try {
-
-                const rawData = document.getElementById('publisher-data').textContent;
-
-                const tagCheck = '{' + '{ publisher_map';
-
-                if (rawData && !rawData.includes(tagCheck)) {
-
-                    const parsed = JSON.parse(rawData);
-
-                    if (parsed) PUBLISHER_MAP = parsed;
-
-                }
-
-            } catch (e) {
-
-                console.log("Running in static mode.");
-
-            }
-
-            
-
-            fetch('/get_notes').then(r => r.json()).then(data => {
-
-                const container = document.getElementById('notes-list');
-
-                container.innerHTML = ''; 
-
-                
-
-                if (data.notes.length === 0) {
-
-                    container.innerHTML = '<div style="padding:20px; text-align:center;">No endnotes found in this document.</div>';
-
-                    return;
-
-                }
-
-
-
-                data.notes.forEach(note => {
-
-                    const div = document.createElement('div');
-
-                    div.className = 'note-row';
-
-                    div.innerHTML = `
-
-                        <div class="note-id">${note.id}</div>
-
-                        <div class="editor-container">
-
-                            <div class="rich-editor" id="editor-${note.id}" contenteditable="true" 
-
-                                 onblur="saveNote('${note.id}')">${note.html}</div>
-
-                            <div class="save-status" id="status-${note.id}"><i class="fas fa-check"></i> Saved</div>
-
-                        </div>
-
-                        <div class="actions">
-
-                            <div class="search-wrapper">
-
-                                <input type="text" class="search-input" id="query-${note.id}" 
-
-                                       value="${note.clean_term}" placeholder="Search Book or URL..."
-
-                                       onkeypress="if(event.key === 'Enter') searchCitation('${note.id}')">
-
-                                <button class="btn btn-secondary" onclick="clearQuery('${note.id}')" title="Clear Search">
-
-                                    <i class="fas fa-times"></i>
-
-                                </button>
-
-                            </div>
-
-                            <button class="btn btn-primary" onclick="searchCitation('${note.id}')">
-
-                                <i class="fas fa-search"></i> Find Source
-
-                            </button>
-
-                            <div class="loader" id="loader-${note.id}">
-
-                                <i class="fas fa-spinner fa-spin"></i> Searching libraries...
-
-                            </div>
-
-                            <div class="results-panel" id="results-${note.id}"></div>
-
-                        </div>
-
-                    `;
-
-                    container.appendChild(div);
-
-                });
-
-            });
-
-
-
-            function clearQuery(id) {
-
-                const input = document.getElementById(`query-${id}`);
-
-                input.value = '';
-
-                input.focus();
-
-            }
-
-
-
-            function searchCitation(id) {
-
-                const query = document.getElementById(`query-${id}`).value;
-
-                if (!query.trim()) return;
-
-
-
-                const loader = document.getElementById(`loader-${id}`);
-
-                const panel = document.getElementById(`results-${id}`);
-
-                
-
-                loader.style.display = 'block';
-
-                panel.style.display = 'none';
-
-                panel.innerHTML = '';
-
-
-
-                fetch('/search_book', {
-
-                    method: 'POST',
-
-                    headers: {'Content-Type': 'application/json'},
-
-                    body: JSON.stringify({query: query})
-
+        return [{
+            'type': result_type, 
+            'title': page_title, 
+            'authors': [], 
+            'publisher': 'U.S. Government' if is_gov else '', 
+            'year': '', 
+            'url': url, 
+            'short_link': short_link,
+            'domain': domain, 
+            'access_date': datetime.now().strftime("%B %d, %Y"), 
+            'id': 'web_result'
+        }]
+    except:
+        # Fallback
+        domain = urlparse(url).netloc.replace('www.', '')
+        return [{
+            'type': 'gov' if domain.endswith('.gov') else 'web', 
+            'title': "Web Resource", 
+            'authors': [], 
+            'publisher': '', 
+            'year': '', 
+            'url': url, 
+            'short_link': short_link,
+            'domain': domain, 
+            'access_date': datetime.now().strftime("%B %d, %Y"), 
+            'id': 'web_result_failed'
+        }]
+
+def query_google_books(query):
+    url_pattern = re.compile(r'^(http|www\.)', re.IGNORECASE)
+    if url_pattern.match(query): return fetch_web_metadata(query)
+    api_url = "https://www.googleapis.com/books/v1/volumes"
+    params = {'q': query, 'maxResults': 4, 'printType': 'books'}
+    try:
+        r = requests.get(api_url, params=params)
+        data = r.json()
+        results = []
+        if 'items' in data:
+            for item in data['items']:
+                info = item.get('volumeInfo', {})
+                results.append({
+                    'type': 'book',
+                    'title': info.get('title', 'Unknown Title'),
+                    'authors': info.get('authors', ['Unknown']),
+                    'publisher': info.get('publisher', ''),
+                    'city': '', 
+                    'year': info.get('publishedDate', '')[:4],
+                    'id': item['id']
                 })
-
-                .then(r => r.json())
-
-                .then(data => {
-
-                    loader.style.display = 'none';
-
-                    panel.style.display = 'block';
-
-                    
-
-                    if (data.items.length === 0) {
-
-                        panel.innerHTML = '<div style="padding:15px; color:#666; text-align:center; font-style:italic;">No matching books/websites found.</div>';
-
-                        return;
-
-                    }
-
-
-
-                    data.items.forEach(item => {
-
-                        if (!item.city && PUBLISHER_MAP[item.publisher]) {
-
-                            item.city = PUBLISHER_MAP[item.publisher];
-
-                        }
-
-
-
-                        const style = document.getElementById('style-selector').value;
-
-                        const citationHTML = formatCitation(item, style);
-
-                        const citationEncoded = encodeURIComponent(citationHTML);
-
-                        
-
-                        let icon = '<i class="fas fa-book"></i>';
-
-                        if (item.type === 'gov') icon = '<i class="fas fa-landmark"></i>';
-
-                        else if (item.type === 'web') icon = '<i class="fas fa-globe"></i>';
-
-                        
-
-                        let meta = item.authors.join(', ') + ' (' + item.year + ')';
-
-                        if (item.type === 'web' || item.type === 'gov') {
-
-                            meta = item.short_link ? item.short_link : item.url; 
-
-                        }
-
-
-
-                        const card = document.createElement('div');
-
-                        card.className = 'result-card';
-
-                        card.innerHTML = `
-
-                            <span class="result-title">${icon} ${item.title}</span>
-
-                            <div class="result-meta">${meta}</div>
-
-                            <div class="preview-badge">${citationHTML}</div>
-
-                            <div class="card-actions">
-
-                                <button class="btn-action btn-replace" onclick="applyCitation('${id}', '${citationEncoded}', 'replace')">Replace</button>
-
-                                <button class="btn-action btn-append" onclick="applyCitation('${id}', '${citationEncoded}', 'append')">+ Append</button>
-
-                            </div>
-
-                        `;
-
-                        panel.appendChild(card);
-
-                    });
-
-                });
-
-            }
-
-
-
-            function formatCitation(item, style) {
-
-                let citation = "";
-
-                
-
-                if (item.type === 'web' || item.type === 'gov') {
-
-                    let authorPrefix = item.type === 'gov' ? "U.S. Government, " : "";
-
-                    
-
-                    // Use short link if valid, otherwise full url
-
-                    const displayUrl = item.short_link || item.url;
-
-                    const link = `<a href="${item.url}">${displayUrl}</a>`;
-
-
-
-                    if (style === 'chicago') {
-
-                        citation = `${authorPrefix}"${item.title}," accessed ${item.access_date}, ${link}.`;
-
-                    } else if (style === 'mla') {
-
-                        citation = `${authorPrefix}"${item.title}." <em>Web</em>. ${item.access_date} &lt;${link}&gt;.`;
-
-                    } else if (style === 'apa') {
-
-                        citation = `${authorPrefix}${item.title}. Retrieved ${item.access_date}, from ${link}`;
-
-                    }
-
-                    return citation;
-
-                }
-
-
-
-                const authors = item.authors.join(', ');
-
-                if (style === 'chicago') {
-
-                    citation = `${authors}, <em>${item.title}</em>`;
-
-                    let pubParts = [];
-
-                    if (item.city) pubParts.push(item.city);
-
-                    if (item.publisher) pubParts.push(item.publisher);
-
-                    if (item.year) pubParts.push(item.year);
-
-                    if (pubParts.length > 0) citation += ` (${pubParts.join(': ')})`;
-
-                    citation += ".";
-
-                } 
-
-                else if (style === 'mla') {
-
-                    citation = `${authors}. <em>${item.title}</em>. ${item.publisher}, ${item.year}.`;
-
-                }
-
-                else if (style === 'apa') {
-
-                    citation = `${authors} (${item.year}). <em>${item.title}</em>. ${item.publisher}.`;
-
-                }
-
-                return citation;
-
-            }
-
-
-
-            function applyCitation(id, encodedHtml, mode) {
-
-                const newHtml = decodeURIComponent(encodedHtml);
-
-                const editor = document.getElementById(`editor-${id}`);
-
-                
-
-                if (mode === 'replace') {
-
-                    editor.innerHTML = newHtml;
-
-                } else if (mode === 'append') {
-
-                    let currentHtml = editor.innerHTML.trim();
-
-                    const textContent = editor.innerText.trim();
-
-                    let separator = "; ";
-
-                    if (textContent.endsWith('.')) separator = " ";
-
-                    else if (textContent.length === 0) separator = "";
-
-                    editor.innerHTML = currentHtml + separator + newHtml;
-
-                }
-
-                document.getElementById(`results-${id}`).style.display = 'none';
-
-                saveNote(id);
-
-            }
-
-
-
-            function saveNote(id) {
-
-                const editor = document.getElementById(`editor-${id}`);
-
-                const htmlContent = editor.innerHTML;
-
-                const status = document.getElementById(`status-${id}`);
-
-                fetch('/update_note', {
-
-                    method: 'POST',
-
-                    headers: {'Content-Type': 'application/json'},
-
-                    body: JSON.stringify({id: id, html: htmlContent})
-
-                }).then(() => {
-
-                    status.style.opacity = '1';
-
-                    setTimeout(() => status.style.opacity = '0', 2000);
-
-                });
-
-            }
-
-        </script>
-
-        {% endif %}
-
-    </div>
-
-</body>
-
-</html>
+        return results
+    except: return []
+
+def extract_endnotes_xml(user_data):
+    if not user_data or not user_data['endnotes_file']: return []
+    with open(user_data['endnotes_file'], 'r', encoding='utf-8') as f:
+        dom = minidom.parseString(f.read())
+    notes = []
+    for en in dom.getElementsByTagName('w:endnote'):
+        en_id = en.getAttribute('w:id')
+        if en_id and en_id not in ['-1', '0']:
+            html_parts = []
+            full_text_parts = []
+            p = en.getElementsByTagName('w:p')[0]
+            for run in p.getElementsByTagName('w:r'):
+                if run.getElementsByTagName('w:endnoteRef'): continue
+                text = "".join([t.firstChild.nodeValue for t in run.getElementsByTagName('w:t') if t.firstChild])
+                if not text: continue
+                full_text_parts.append(text)
+                rPr = run.getElementsByTagName('w:rPr')
+                is_italic = False
+                if rPr and rPr[0].getElementsByTagName('w:i'): is_italic = True
+                if is_italic: html_parts.append(f"<em>{text}</em>")
+                else: html_parts.append(text)
+            final_html = "".join(html_parts).strip()
+            clean_term = clean_search_term("".join(full_text_parts).strip())
+            notes.append({'id': en_id, 'html': final_html, 'clean_term': clean_term})
+    return sorted(notes, key=lambda x: int(x['id']))
+
+def write_updated_note(user_data, note_id, html_content):
+    if not user_data: return
+    path = user_data['endnotes_file']
+    dom = minidom.parse(str(path))
+    rel_mgr = RelationshipManager(user_data['extract_dir'])
+    for en in dom.getElementsByTagName('w:endnote'):
+        if en.getAttribute('w:id') == str(note_id):
+            p = en.getElementsByTagName('w:p')[0]
+            ref_run = None
+            for run in p.getElementsByTagName('w:r'):
+                if run.getElementsByTagName('w:endnoteRef'):
+                    ref_run = run
+                    break
+            while p.hasChildNodes(): p.removeChild(p.firstChild)
+            pPr = dom.createElement('w:pPr')
+            pStyle = dom.createElement('w:pStyle')
+            pStyle.setAttribute('w:val', 'EndnoteText')
+            pPr.appendChild(pStyle)
+            p.appendChild(pPr)
+            if ref_run:
+                p.appendChild(ref_run)
+                r = dom.createElement('w:r')
+                t = dom.createElement('w:t')
+                t.setAttribute('xml:space', 'preserve')
+                t.appendChild(dom.createTextNode(" "))
+                r.appendChild(t)
+                p.appendChild(r)
+            tokens = re.split(r'(<a href="[^"]+">.*?</a>|<em>.*?</em>)', html_content)
+            for token in tokens:
+                if not token: continue
+                token = token.replace('&nbsp;', ' ').replace('&amp;', '&')
+                if token.startswith('<a href='):
+                    match = re.match(r'<a href="([^"]+)">(.*?)</a>', token)
+                    if match:
+                        url = match.group(1)
+                        text = match.group(2)
+                        r_id = rel_mgr.get_or_create_hyperlink(url)
+                        hlink = dom.createElement('w:hyperlink')
+                        hlink.setAttribute('r:id', r_id)
+                        run = dom.createElement('w:r')
+                        rPr = dom.createElement('w:rPr')
+                        rStyle = dom.createElement('w:rStyle')
+                        rStyle.setAttribute('w:val', 'Hyperlink')
+                        rPr.appendChild(rStyle)
+                        color = dom.createElement('w:color')
+                        color.setAttribute('w:val', '0000FF')
+                        rPr.appendChild(color)
+                        u = dom.createElement('w:u')
+                        u.setAttribute('w:val', 'single')
+                        rPr.appendChild(u)
+                        run.appendChild(rPr)
+                        t = dom.createElement('w:t')
+                        t.appendChild(dom.createTextNode(text))
+                        run.appendChild(t)
+                        hlink.appendChild(run)
+                        p.appendChild(hlink)
+                        continue
+                run = dom.createElement('w:r')
+                rPr = dom.createElement('w:rPr')
+                rFonts = dom.createElement('w:rFonts')
+                rFonts.setAttribute('w:ascii', 'Times New Roman')
+                rFonts.setAttribute('w:hAnsi', 'Times New Roman')
+                rPr.appendChild(rFonts)
+                run.appendChild(rPr)
+                text_content = token
+                if token.startswith('<em>'):
+                    text_content = token[4:-5]
+                    run.getElementsByTagName('w:rPr')[0].appendChild(dom.createElement('w:i'))
+                t = dom.createElement('w:t')
+                t.setAttribute('xml:space', 'preserve')
+                t.appendChild(dom.createTextNode(text_content))
+                run.appendChild(t)
+                p.appendChild(run)
+    with open(path, 'w', encoding='utf-8') as f:
+        f.write(dom.toxml())
+
+# ==================== ROUTES ====================
+@app.route('/')
+def index():
+    if 'user_id' not in session: session['user_id'] = str(uuid.uuid4())
+    user_data = get_user_data()
+    filename = user_data['original_filename'] if user_data else None
+    return render_template('index.html', filename=filename, publisher_map=PUBLISHER_PLACE_MAP)
+
+@app.route('/upload', methods=['POST'])
+def upload():
+    file = request.files['file']
+    if file:
+        if 'user_id' not in session: session['user_id'] = str(uuid.uuid4())
+        user_id = session['user_id']
+        if user_id in USER_DATA_STORE:
+            try: shutil.rmtree(USER_DATA_STORE[user_id]['temp_dir'])
+            except: pass
+        temp_dir = tempfile.mkdtemp()
+        original_filename = secure_filename(file.filename)
+        input_path = os.path.join(temp_dir, 'source.docx')
+        file.save(input_path)
+        extract_dir = os.path.join(temp_dir, 'extracted')
+        with zipfile.ZipFile(input_path, 'r') as z: z.extractall(extract_dir)
+        endnotes_file = os.path.join(extract_dir, 'word', 'endnotes.xml')
+        USER_DATA_STORE[user_id] = {
+            'temp_dir': temp_dir,
+            'extract_dir': extract_dir,
+            'endnotes_file': endnotes_file,
+            'original_filename': original_filename
+        }
+    return index()
+
+@app.route('/reset')
+def reset():
+    user_id = session.get('user_id')
+    if user_id and user_id in USER_DATA_STORE:
+        try: shutil.rmtree(USER_DATA_STORE[user_id]['temp_dir'])
+        except: pass
+        del USER_DATA_STORE[user_id]
+    return redirect(url_for('index'))
+
+@app.route('/get_notes')
+def get_notes(): 
+    user_data = get_user_data()
+    if not user_data: return jsonify({'notes': []})
+    return jsonify({'notes': extract_endnotes_xml(user_data)})
+
+@app.route('/search_book', methods=['POST'])
+def search_book(): return jsonify({'items': query_google_books(request.json['query'])})
+
+@app.route('/update_note', methods=['POST'])
+def update_note():
+    user_data = get_user_data()
+    if not user_data: return jsonify({'success': False, 'error': 'Session expired'})
+    data = request.json
+    write_updated_note(user_data, data['id'], data['html'])
+    return jsonify({'success': True})
+
+@app.route('/download')
+def download():
+    user_data = get_user_data()
+    if not user_data: return "Session expired", 400
+    output = os.path.join(user_data['temp_dir'], f"Resolved_{user_data['original_filename']}")
+    with zipfile.ZipFile(output, 'w', zipfile.ZIP_DEFLATED) as z:
+        for root, dirs, files in os.walk(user_data['extract_dir']):
+            for file in files:
+                p = os.path.join(root, file)
+                z.write(p, os.path.relpath(p, user_data['extract_dir']))
+    return send_file(output, as_attachment=True)
+
+if __name__ == '__main__':
+    app.run(debug=True, port=5000)
