@@ -204,7 +204,7 @@
                         
                         let meta = item.authors.join(', ') + ' (' + item.year + ')';
                         if (item.type === 'web' || item.type === 'gov') {
-                            meta = item.domain; // Use domain only for meta
+                            meta = item.domain; // Use domain for meta preview
                         }
 
                         const card = document.createElement('div');
@@ -240,7 +240,7 @@
                     }
                     datePart += `accessed ${item.access_date}`;
                     
-                    // 3. Link (Always use full URL for both text and href in this version)
+                    // 3. Link (Always use full URL for both text and href)
                     const link = `<a href="${item.url}">${item.url}</a>`;
 
                     if (style === 'chicago') {
