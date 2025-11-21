@@ -14,7 +14,7 @@ from datetime import datetime
 from urllib.parse import urlparse, unquote
 
 app = Flask(__name__)
-app.config['SECRET_KEY'] = 'production-key-v17-final-link-fix'
+app.config['SECRET_KEY'] = 'production-key-v18-url-fix'
 
 # ==================== GLOBAL STORAGE ====================
 # Storage for temporary file paths, keyed by user session ID
@@ -47,6 +47,7 @@ GOV_AGENCY_MAP = {
     'ferc.gov': 'Federal Energy Regulatory Commission',
     'epa.gov': 'Environmental Protection Agency',
     'energy.gov': 'U.S. Department of Energy',
+    'doe.gov': 'U.S. Department of Energy',  # Added doe.gov mapping
     'doi.gov': 'U.S. Department of the Interior',
     'justice.gov': 'U.S. Department of Justice',
     'regulations.gov': 'U.S. Government', 
@@ -103,20 +104,31 @@ class RelationshipManager:
         return new_id
 
     def _save(self):
-        root = minidom.Document()
-        rels_elem = root.createElement('Relationships')
+        """Save relationships file with proper XML formatting"""
+        impl = minidom.getDOMImplementation()
+        doc = impl.createDocument(None, None, None)
+        
+        # Create root element with namespace
+        rels_elem = doc.createElement('Relationships')
         rels_elem.setAttribute('xmlns', "http://schemas.openxmlformats.org/package/2006/relationships")
-        root.appendChild(rels_elem)
+        doc.appendChild(rels_elem)
+        
+        # Add all relationships
         for rel in self.relationships:
-            node = root.createElement('Relationship')
+            node = doc.createElement('Relationship')
             node.setAttribute('Id', rel['Id'])
             node.setAttribute('Type', rel['Type'])
             node.setAttribute('Target', rel['Target'])
             if rel.get('TargetMode'):
                 node.setAttribute('TargetMode', rel['TargetMode'])
             rels_elem.appendChild(node)
+        
+        # Write with proper XML declaration
         with open(self.rels_path, 'w', encoding='utf-8') as f:
-            f.write(root.toxml())
+            # Write XML declaration manually to match Word's format
+            f.write('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\r\n')
+            # Write the rest without the XML declaration
+            f.write(rels_elem.toxml())
 
 # ==================== BACKEND LOGIC ====================
 
@@ -125,18 +137,38 @@ def get_user_data():
     return USER_DATA_STORE.get(session['user_id'])
 
 def clean_search_term(text):
-    text = re.sub(r'^\s*\d+\.?\s*', '', text)
-    text = re.sub(r',?\s*pp?\.?\s*\d+(-\d+)?\.?$', '', text)
-    text = re.sub(r',?\s*\d+\.?$', '', text)
+    """Clean search terms for book searches - but NOT for URLs"""
+    # Check if this is a URL - if so, return it unchanged
+    if text.startswith(('http://', 'https://', 'www.')):
+        return text
+    
+    # For non-URLs, clean up book citation formatting
+    text = re.sub(r'^\s*\d+\.?\s*', '', text)  # Remove leading numbers
+    text = re.sub(r',?\s*pp?\.?\s*\d+(-\d+)?\.?$', '', text)  # Remove page numbers
+    text = re.sub(r',?\s*\d+\.?$', '', text)  # Remove trailing numbers
     return text.strip()
 
 def get_agency_name(domain):
     """Returns the official agency name based on the domain."""
+    # Handle subdomains by checking the main domain
     parts = domain.split('.')
+    
+    # Try the full domain first (for special cases)
+    if domain in GOV_AGENCY_MAP:
+        return GOV_AGENCY_MAP[domain]
+    
+    # Then try the root domain (last two parts)
     if len(parts) >= 2:
         root_domain = f"{parts[-2]}.{parts[-1]}"
         if root_domain in GOV_AGENCY_MAP:
             return GOV_AGENCY_MAP[root_domain]
+    
+    # Special handling for subdomains of known agencies
+    if 'doe.gov' in domain:
+        return 'U.S. Department of Energy'
+    elif 'energy.gov' in domain:
+        return 'U.S. Department of Energy'
+    
     return "U.S. Government"
 
 def get_heuristic_title(url):
