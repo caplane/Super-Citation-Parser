@@ -58,7 +58,7 @@
 <body>
     <div class="container">
         <div class="header">
-            <h1>CiteResolver <span class="version-tag">v10.0</span></h1>
+            <h1>CiteResolver <span class="version-tag">v11.0</span></h1>
             {% if filename %}
             <div class="controls">
                 <label>Format Style:</label>
@@ -227,9 +227,13 @@
                 let citation = "";
                 
                 if (item.type === 'web' || item.type === 'gov') {
-                    let authorPrefix = item.type === 'gov' ? "U.S. Government, " : "";
+                    // 1. Author (Agency Name)
+                    let authorPrefix = "";
+                    if (item.authors && item.authors.length > 0) {
+                        authorPrefix = item.authors.join(', ') + ", ";
+                    }
                     
-                    // Use short link if valid, otherwise full url
+                    // 2. Link logic
                     const displayUrl = item.short_link || item.url;
                     const link = `<a href="${item.url}">${displayUrl}</a>`;
 
