@@ -11,12 +11,13 @@ from flask import Flask, render_template, request, jsonify, send_file, session, 
 from werkzeug.utils import secure_filename
 from pathlib import Path
 from datetime import datetime
-from urllib.parse import urlparse, unquote, quote_plus
+from urllib.parse import urlparse, unquote
 
 app = Flask(__name__)
-app.config['SECRET_KEY'] = 'production-key-v20-final-link-solution'
+app.config['SECRET_KEY'] = 'production-key-v18-url-fix'
 
 # ==================== GLOBAL STORAGE ====================
+# Storage for temporary file paths, keyed by user session ID
 USER_DATA_STORE = {}
 
 # ==================== CONFIGURATION ====================
@@ -46,6 +47,7 @@ GOV_AGENCY_MAP = {
     'ferc.gov': 'Federal Energy Regulatory Commission',
     'epa.gov': 'Environmental Protection Agency',
     'energy.gov': 'U.S. Department of Energy',
+    'doe.gov': 'U.S. Department of Energy',  # Added doe.gov mapping
     'doi.gov': 'U.S. Department of the Interior',
     'justice.gov': 'U.S. Department of Justice',
     'regulations.gov': 'U.S. Government', 
@@ -53,7 +55,6 @@ GOV_AGENCY_MAP = {
     'cdc.gov': 'Centers for Disease Control and Prevention',
     'nih.gov': 'National Institutes of Health',
     'usda.gov': 'U.S. Department of Agriculture',
-    'doe.gov': 'U.S. Department of Energy', 
 }
 
 # ==================== RELATIONSHIP MANAGER ====================
@@ -88,47 +89,46 @@ class RelationshipManager:
 
     def get_or_create_hyperlink(self, url):
         """Returns the rId for a URL, creating a new Relationship if needed"""
-        # Ensure the URL is consistently formatted (e.g., starts with https)
-        clean_url = self._ensure_protocol(url)
-        
         for rel in self.relationships:
-            if rel['Target'] == clean_url and rel['Type'].endswith('/hyperlink'):
+            if rel['Target'] == url and rel['Type'].endswith('/hyperlink'):
                 return rel['Id']
-        
         new_id = f"rId{self.next_id}"
         self.next_id += 1
         self.relationships.append({
             'Id': new_id,
             'Type': "http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink",
-            'Target': clean_url,
+            'Target': url,
             'TargetMode': "External"
         })
         self._save()
         return new_id
 
-    def _ensure_protocol(self, url):
-        """Adds https:// if protocol is missing (best practice for reliability)"""
-        # CRITICAL FIX: Ensure the URL does not contain any %-encoding that Word hates
-        url = unquote(url) 
-        if not url.startswith(('http://', 'https://')):
-            return 'https://' + url
-        return url
-
     def _save(self):
-        root = minidom.Document()
-        rels_elem = root.createElement('Relationships')
+        """Save relationships file with proper XML formatting"""
+        impl = minidom.getDOMImplementation()
+        doc = impl.createDocument(None, None, None)
+        
+        # Create root element with namespace
+        rels_elem = doc.createElement('Relationships')
         rels_elem.setAttribute('xmlns', "http://schemas.openxmlformats.org/package/2006/relationships")
-        root.appendChild(rels_elem)
+        doc.appendChild(rels_elem)
+        
+        # Add all relationships
         for rel in self.relationships:
-            node = root.createElement('Relationship')
+            node = doc.createElement('Relationship')
             node.setAttribute('Id', rel['Id'])
             node.setAttribute('Type', rel['Type'])
             node.setAttribute('Target', rel['Target'])
             if rel.get('TargetMode'):
                 node.setAttribute('TargetMode', rel['TargetMode'])
             rels_elem.appendChild(node)
+        
+        # Write with proper XML declaration
         with open(self.rels_path, 'w', encoding='utf-8') as f:
-            f.write(root.toxml())
+            # Write XML declaration manually to match Word's format
+            f.write('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\r\n')
+            # Write the rest without the XML declaration
+            f.write(rels_elem.toxml())
 
 # ==================== BACKEND LOGIC ====================
 
@@ -137,20 +137,38 @@ def get_user_data():
     return USER_DATA_STORE.get(session['user_id'])
 
 def clean_search_term(text):
-    text = re.sub(r'^\s*\d+\.?\s*', '', text)
-    text = re.sub(r',?\s*pp?\.?\s*\d+(-\d+)?\.?$', '', text)
-    text = re.sub(r',?\s*\d+\.?$', '', text)
+    """Clean search terms for book searches - but NOT for URLs"""
+    # Check if this is a URL - if so, return it unchanged
+    if text.startswith(('http://', 'https://', 'www.')):
+        return text
+    
+    # For non-URLs, clean up book citation formatting
+    text = re.sub(r'^\s*\d+\.?\s*', '', text)  # Remove leading numbers
+    text = re.sub(r',?\s*pp?\.?\s*\d+(-\d+)?\.?$', '', text)  # Remove page numbers
+    text = re.sub(r',?\s*\d+\.?$', '', text)  # Remove trailing numbers
     return text.strip()
 
 def get_agency_name(domain):
     """Returns the official agency name based on the domain."""
+    # Handle subdomains by checking the main domain
+    parts = domain.split('.')
+    
+    # Try the full domain first (for special cases)
     if domain in GOV_AGENCY_MAP:
         return GOV_AGENCY_MAP[domain]
-    parts = domain.split('.')
+    
+    # Then try the root domain (last two parts)
     if len(parts) >= 2:
         root_domain = f"{parts[-2]}.{parts[-1]}"
         if root_domain in GOV_AGENCY_MAP:
             return GOV_AGENCY_MAP[root_domain]
+    
+    # Special handling for subdomains of known agencies
+    if 'doe.gov' in domain:
+        return 'U.S. Department of Energy'
+    elif 'energy.gov' in domain:
+        return 'U.S. Department of Energy'
+    
     return "U.S. Government"
 
 def get_heuristic_title(url):
@@ -179,10 +197,15 @@ def fetch_web_metadata(url):
         is_gov = domain.endswith('.gov')
         result_type = 'gov' if is_gov else 'web'
         
+        # Determine Agency Author Name (Guaranteed for .gov)
         author_name = get_agency_name(domain) if is_gov else ""
+        
         last_updated = None
+        
+        # 1. Start with Heuristic Title as the safest option
         page_title = get_heuristic_title(url)
         
+        # 2. Try to fetch real title from the server
         headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8'
@@ -193,20 +216,23 @@ def fetch_web_metadata(url):
             response = s.get(url, headers=headers, timeout=7, allow_redirects=True)
             
             if response.status_code == 200:
+                # Scrape <title>
                 title_match = re.search(r'<title>(.*?)</title>', response.text, re.IGNORECASE | re.DOTALL)
                 if title_match:
                     raw_title = title_match.group(1).strip()
                     if not any(block_word in raw_title for block_word in ["Just a moment", "Access Denied", "Error", "404"]):
                          page_title = re.sub(r' \| .*$', '', raw_title).strip()
                          
+                # Scrape Last Modified/Published Date from headers 
                 if 'Last-Modified' in response.headers:
                     try:
                         last_updated = datetime.strptime(response.headers['Last-Modified'][:25], '%a, %d %b %Y %H:%M:%S').strftime("%B %d, %Y")
                     except:
                          pass
         except:
-            pass 
+            pass # Use heuristic title and generic date if request fails
 
+        # Final cleanup for output
         access_date = datetime.now().strftime("%B %d, %Y")
         
         return [{
@@ -268,6 +294,7 @@ def extract_endnotes_xml(user_data):
     
     notes = []
     
+    # Find the relationships file path (needed to resolve existing hyperlinks)
     rels_path = os.path.join(user_data['extract_dir'], 'word', '_rels', 'endnotes.xml.rels')
     relationships = {}
     if os.path.exists(rels_path):
@@ -284,30 +311,37 @@ def extract_endnotes_xml(user_data):
             
             p = en.getElementsByTagName('w:p')[0]
             
+            # --- Iterate through direct children of the paragraph ---
             for node in p.childNodes:
                 
                 if node.nodeType == node.ELEMENT_NODE:
                     
+                    # Case 1: Existing Hyperlink (<w:hyperlink>)
                     if node.tagName == 'w:hyperlink':
                         r_id = node.getAttribute('r:id')
                         url = relationships.get(r_id, '#') # Get original URL target
                         
+                        # Extract the text content from the runs inside the hyperlink
                         link_text = ""
                         for run in node.getElementsByTagName('w:r'):
                             text = "".join([t.firstChild.nodeValue for t in run.getElementsByTagName('w:t') if t.firstChild])
                             link_text += text
                             full_text_parts.append(text)
                             
+                        # Convert to HTML anchor tag
                         html_parts.append(f'<a href="{url}">{link_text}</a>')
                         continue
 
+                    # Case 2: Standard Run (<w:r>) (for plain text, spaces, or italics)
                     if node.tagName == 'w:r':
+                        # Check for Endnote Marker and skip it
                         if node.getElementsByTagName('w:endnoteRef'): continue
                         
                         text = "".join([t.firstChild.nodeValue for t in node.getElementsByTagName('w:t') if t.firstChild])
                         if not text: continue
                         full_text_parts.append(text)
                         
+                        # Check Italics
                         rPr = node.getElementsByTagName('w:rPr')
                         is_italic = False
                         if rPr and rPr[0].getElementsByTagName('w:i'): is_italic = True
@@ -390,6 +424,7 @@ def write_updated_note(user_data, note_id, html_content):
                         hlink.appendChild(run)
                         p.appendChild(hlink)
                         
+                        # --- CRITICAL FIX: Ensure the relationships XML is saved immediately ---
                         rel_mgr._save()
                         continue
 
