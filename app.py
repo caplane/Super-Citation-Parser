@@ -14,7 +14,7 @@ from datetime import datetime
 from urllib.parse import urlparse, unquote
 
 app = Flask(__name__)
-app.config['SECRET_KEY'] = 'production-key-v15-link-fix'
+app.config['SECRET_KEY'] = 'production-key-v16-final-link'
 
 # ==================== GLOBAL STORAGE ====================
 # Storage for temporary file paths, keyed by user session ID
@@ -145,9 +145,12 @@ def get_heuristic_title(url):
     path = parsed_uri.path
     slug = [s for s in path.split('/') if s][-1] if path.split('/') else ''
     
-    # If the slug is a filename or long string, clean it up
     clean_filename = unquote(slug).replace('_', ' ').replace('-', ' ').title()
     
+    # If the path is a generic file extension, use the domain
+    if clean_filename.lower().endswith(('.pdf', '.htm', '.html', '.aspx', '.asp', '.php')):
+        clean_filename = clean_filename[:-4].strip()
+        
     # Fallback to domain name if the path is generic or empty
     if not clean_filename or len(clean_filename) < 5:
         domain = parsed_uri.netloc.replace('www.', '')
@@ -179,7 +182,13 @@ def fetch_web_metadata(url):
         }
         
         try:
-            response = requests.get(url, headers=headers, timeout=7, allow_redirects=True)
+            # Use request session to handle redirects gracefully
+            s = requests.Session()
+            response = s.get(url, headers=headers, timeout=7, allow_redirects=True)
+            
+            # Use final URL after redirects for metadata extraction
+            final_url = response.url
+            
             if response.status_code == 200:
                 # Scrape <title>
                 title_match = re.search(r'<title>(.*?)</title>', response.text, re.IGNORECASE | re.DOTALL)
@@ -187,7 +196,7 @@ def fetch_web_metadata(url):
                     raw_title = title_match.group(1).strip()
                     # Filter out bad titles
                     if not any(block_word in raw_title for block_word in ["Just a moment", "Access Denied", "Error", "404"]):
-                         # Clean title: remove generic agency names/suffixes
+                         # Use raw_title if it's better than the heuristic
                          page_title = re.sub(r' \| .*$', '', raw_title).strip()
                          
                 
@@ -198,7 +207,7 @@ def fetch_web_metadata(url):
                     except:
                          pass
         except:
-            pass # Use heuristic title if request fails
+            pass # Use heuristic title and generic date if request fails
 
         # Final cleanup for output
         access_date = datetime.now().strftime("%B %d, %Y")
