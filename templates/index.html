@@ -20,20 +20,22 @@
         .rich-editor { min-height: 60px; padding: 15px; border: 1px solid #ced4da; border-radius: 6px; font-family: "Times New Roman", serif; font-size: 1.15em; line-height: 1.5; background: #fff; transition: all 0.2s; outline: none; }
         .rich-editor:focus { border-color: #007bff; box-shadow: 0 0 0 3px rgba(0,123,255,0.1); }
         .rich-editor em { font-style: italic; background-color: #fff3cd; padding: 0 2px; border-radius: 2px; } 
-        /* Show links inside editor */
         .rich-editor a { color: #007bff; text-decoration: underline; cursor: pointer; }
         
         .actions { display: flex; flex-direction: column; gap: 10px; }
         .search-wrapper { display: flex; gap: 5px; align-items: stretch; }
         .search-input { flex-grow: 1; padding: 8px 12px; border: 1px solid #dee2e6; border-radius: 4px; font-size: 0.95em; color: #495057; transition: 0.2s; }
         .search-input:focus { border-color: #007bff; outline: none; }
-        .btn { border: none; border-radius: 4px; cursor: pointer; font-weight: 500; transition: 0.2s; display: inline-flex; align-items: center; justify-content: center; gap: 6px; font-size: 14px; }
+        .btn { border: none; border-radius: 4px; cursor: pointer; font-weight: 500; transition: 0.2s; display: inline-flex; align-items: center; justify-content: center; gap: 6px; font-size: 14px; text-decoration: none; }
         .btn-primary { background: #007bff; color: white; padding: 10px 16px; width: 100%; }
         .btn-primary:hover { background: #0056b3; }
         .btn-secondary { background: #6c757d; color: white; padding: 0 12px; }
         .btn-secondary:hover { background: #5a6268; }
-        .btn-download { background: #28a745; color: white; padding: 10px 20px; text-decoration: none; font-weight: 600; }
+        .btn-download { background: #28a745; color: white; padding: 10px 20px; font-weight: 600; }
         .btn-download:hover { background: #218838; }
+        .btn-reset { background: #6c757d; color: white; padding: 10px 20px; font-weight: 600; }
+        .btn-reset:hover { background: #5a6268; }
+        
         .results-panel { display: none; background: #f8f9fa; border: 1px solid #e9ecef; border-radius: 6px; margin-top: 10px; max-height: 400px; overflow-y: auto; }
         .result-card { padding: 15px; border-bottom: 1px solid #eee; background: white; }
         .result-card:last-child { border-bottom: none; }
@@ -56,7 +58,7 @@
 <body>
     <div class="container">
         <div class="header">
-            <h1>CiteResolver <span class="version-tag">v8.0</span></h1>
+            <h1>CiteResolver <span class="version-tag">v9.0</span></h1>
             {% if filename %}
             <div class="controls">
                 <label>Format Style:</label>
@@ -65,6 +67,7 @@
                     <option value="mla">MLA</option>
                     <option value="apa">APA</option>
                 </select>
+                <a href="/reset" class="btn btn-reset"><i class="fas fa-redo"></i> Start Over</a>
                 <a href="/download" class="btn btn-download"><i class="fas fa-file-export"></i> Download Document</a>
             </div>
             {% endif %}
@@ -87,15 +90,11 @@
             <div style="padding: 40px; text-align: center; color: #666;">Loading notes...</div>
         </div>
 
-        <!-- 
-            DATA INJECTION BLOCK 
-        -->
         <script id="publisher-data" type="application/json">
             {{ publisher_map | tojson }}
         </script>
 
         <script>
-            // 1. Initialize with Default Map (Fallback for Static Preview)
             let PUBLISHER_MAP = {
                 'Harvard University Press': 'Cambridge, MA',
                 'MIT Press': 'Cambridge, MA',
@@ -106,21 +105,17 @@
                 'Columbia University Press': 'New York'
             };
 
-            // 2. Try to Load Server Data (Production Mode)
             try {
                 const rawData = document.getElementById('publisher-data').textContent;
-                // We split the check string so Jinja doesn't try to parse it during rendering
                 const tagCheck = '{' + '{ publisher_map';
                 if (rawData && !rawData.includes(tagCheck)) {
                     const parsed = JSON.parse(rawData);
                     if (parsed) PUBLISHER_MAP = parsed;
                 }
             } catch (e) {
-                console.log("Running in static mode (using default publisher map).");
+                console.log("Running in static mode.");
             }
             
-            // === APP LOGIC ===
-
             fetch('/get_notes').then(r => r.json()).then(data => {
                 const container = document.getElementById('notes-list');
                 container.innerHTML = ''; 
@@ -233,8 +228,6 @@
                 
                 if (item.type === 'web' || item.type === 'gov') {
                     let authorPrefix = item.type === 'gov' ? "U.S. Government, " : "";
-                    
-                    // Prefer Short Link, then Fallback to URL/Domain
                     const displayUrl = item.short_link || item.url;
                     const link = `<a href="${item.url}">${displayUrl}</a>`;
 
