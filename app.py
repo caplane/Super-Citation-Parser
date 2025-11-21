@@ -7,19 +7,17 @@ import json
 import requests
 import uuid
 import xml.dom.minidom as minidom
-from flask import Flask, render_template, request, jsonify, send_file, session
+# Added redirect and url_for to imports
+from flask import Flask, render_template, request, jsonify, send_file, session, redirect, url_for
 from werkzeug.utils import secure_filename
 from pathlib import Path
 from datetime import datetime
 from urllib.parse import urlparse, unquote
 
 app = Flask(__name__)
-# CRITICAL: This key signs the cookies. Keep it secret in real production.
 app.config['SECRET_KEY'] = 'production-key-v9-multiuser-secure'
 
-# ==================== GLOBAL STORAGE (Multi-User Safe) ====================
-# Instead of one variable, we map user_ids to their specific data
-# Structure: { 'user_uuid_123': { 'temp_dir': '...', 'extract_dir': '...' } }
+# ==================== GLOBAL STORAGE ====================
 USER_DATA_STORE = {}
 
 # ==================== CONFIGURATION ====================
@@ -47,8 +45,6 @@ PUBLISHER_PLACE_MAP = {
 
 # ==================== RELATIONSHIP MANAGER ====================
 class RelationshipManager:
-    """Handles adding URLs to word/_rels/endnotes.xml.rels"""
-    
     def __init__(self, extract_dir):
         self.rels_dir = os.path.join(extract_dir, 'word', '_rels')
         self.rels_path = os.path.join(self.rels_dir, 'endnotes.xml.rels')
@@ -59,7 +55,6 @@ class RelationshipManager:
     def _load(self):
         if not os.path.exists(self.rels_dir):
             os.makedirs(self.rels_dir)
-            
         if os.path.exists(self.rels_path):
             with open(self.rels_path, 'r', encoding='utf-8') as f:
                 dom = minidom.parseString(f.read())
@@ -69,7 +64,6 @@ class RelationshipManager:
                     if match:
                         num_id = int(match.group())
                         self.next_id = max(self.next_id, num_id + 1)
-                    
                     self.relationships.append({
                         'Id': rid,
                         'Type': rel.getAttribute('Type'),
@@ -81,10 +75,8 @@ class RelationshipManager:
         for rel in self.relationships:
             if rel['Target'] == url and rel['Type'].endswith('/hyperlink'):
                 return rel['Id']
-        
         new_id = f"rId{self.next_id}"
         self.next_id += 1
-        
         self.relationships.append({
             'Id': new_id,
             'Type': "http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink",
@@ -99,7 +91,6 @@ class RelationshipManager:
         rels_elem = root.createElement('Relationships')
         rels_elem.setAttribute('xmlns', "http://schemas.openxmlformats.org/package/2006/relationships")
         root.appendChild(rels_elem)
-        
         for rel in self.relationships:
             node = root.createElement('Relationship')
             node.setAttribute('Id', rel['Id'])
@@ -108,16 +99,13 @@ class RelationshipManager:
             if rel.get('TargetMode'):
                 node.setAttribute('TargetMode', rel['TargetMode'])
             rels_elem.appendChild(node)
-            
         with open(self.rels_path, 'w', encoding='utf-8') as f:
             f.write(root.toxml())
 
 # ==================== BACKEND LOGIC ====================
 
 def get_user_data():
-    """Retrieve specific data for the current user"""
-    if 'user_id' not in session:
-        return None
+    if 'user_id' not in session: return None
     return USER_DATA_STORE.get(session['user_id'])
 
 def shorten_url(long_url):
@@ -128,7 +116,6 @@ def shorten_url(long_url):
             response = requests.post('https://api-ssl.bitly.com/v4/shorten', headers=headers, json=data, timeout=3)
             if response.ok: return response.json().get('link')
         except Exception as e: print(f"Bitly Error: {e}")
-
     try:
         api_url = f"http://tinyurl.com/api-create.php?url={long_url}"
         response = requests.get(api_url, timeout=3)
@@ -149,7 +136,6 @@ def fetch_web_metadata(url):
         domain = parsed_uri.netloc.replace('www.', '')
         is_gov = domain.endswith('.gov')
         result_type = 'gov' if is_gov else 'web'
-        
         short_link = shorten_url(url)
         
         path = parsed_uri.path.lower()
@@ -163,7 +149,6 @@ def fetch_web_metadata(url):
         title_match = re.search(r'<title>(.*?)</title>', response.text, re.IGNORECASE | re.DOTALL)
         page_title = title_match.group(1).strip() if title_match else "Unknown Document"
         page_title = re.split(r'\s+[|\-]\s+', page_title)[0]
-        
         return [{'type': result_type, 'title': page_title, 'authors': [], 'publisher': 'U.S. Government' if is_gov else '', 'year': '', 'url': url, 'short_link': short_link, 'domain': domain, 'access_date': datetime.now().strftime("%B %d, %Y"), 'id': 'web_result'}]
     except:
         domain = urlparse(url).netloc.replace('www.', '')
@@ -172,7 +157,6 @@ def fetch_web_metadata(url):
 def query_google_books(query):
     url_pattern = re.compile(r'^(http|www\.)', re.IGNORECASE)
     if url_pattern.match(query): return fetch_web_metadata(query)
-
     api_url = "https://www.googleapis.com/books/v1/volumes"
     params = {'q': query, 'maxResults': 4, 'printType': 'books'}
     try:
@@ -192,13 +176,10 @@ def query_google_books(query):
                     'id': item['id']
                 })
         return results
-    except:
-        return []
+    except: return []
 
 def extract_endnotes_xml(user_data):
-    """Extract notes using the user-specific file path"""
     if not user_data or not user_data['endnotes_file']: return []
-    
     with open(user_data['endnotes_file'], 'r', encoding='utf-8') as f:
         dom = minidom.parseString(f.read())
     notes = []
@@ -224,13 +205,10 @@ def extract_endnotes_xml(user_data):
     return sorted(notes, key=lambda x: int(x['id']))
 
 def write_updated_note(user_data, note_id, html_content):
-    """Write update using the user-specific file path"""
     if not user_data: return
-    
     path = user_data['endnotes_file']
     dom = minidom.parse(str(path))
     rel_mgr = RelationshipManager(user_data['extract_dir'])
-    
     for en in dom.getElementsByTagName('w:endnote'):
         if en.getAttribute('w:id') == str(note_id):
             p = en.getElementsByTagName('w:p')[0]
@@ -253,7 +231,6 @@ def write_updated_note(user_data, note_id, html_content):
                 t.appendChild(dom.createTextNode(" "))
                 r.appendChild(t)
                 p.appendChild(r)
-            
             tokens = re.split(r'(<a href="[^"]+">.*?</a>|<em>.*?</em>)', html_content)
             for token in tokens:
                 if not token: continue
@@ -300,56 +277,52 @@ def write_updated_note(user_data, note_id, html_content):
                 t.appendChild(dom.createTextNode(text_content))
                 run.appendChild(t)
                 p.appendChild(run)
-                
     with open(path, 'w', encoding='utf-8') as f:
         f.write(dom.toxml())
 
 # ==================== ROUTES ====================
 @app.route('/')
 def index():
-    # If new user, generate an ID
-    if 'user_id' not in session:
-        session['user_id'] = str(uuid.uuid4())
-        
+    if 'user_id' not in session: session['user_id'] = str(uuid.uuid4())
     user_data = get_user_data()
     filename = user_data['original_filename'] if user_data else None
-    
     return render_template('index.html', filename=filename, publisher_map=PUBLISHER_PLACE_MAP)
 
 @app.route('/upload', methods=['POST'])
 def upload():
     file = request.files['file']
     if file:
-        # Ensure User ID
-        if 'user_id' not in session:
-            session['user_id'] = str(uuid.uuid4())
-        
+        if 'user_id' not in session: session['user_id'] = str(uuid.uuid4())
         user_id = session['user_id']
-        
-        # Clean up previous session for this specific user only
         if user_id in USER_DATA_STORE:
             try: shutil.rmtree(USER_DATA_STORE[user_id]['temp_dir'])
             except: pass
-            
-        # Create new storage for this user
         temp_dir = tempfile.mkdtemp()
         original_filename = secure_filename(file.filename)
         input_path = os.path.join(temp_dir, 'source.docx')
         file.save(input_path)
-        
         extract_dir = os.path.join(temp_dir, 'extracted')
         with zipfile.ZipFile(input_path, 'r') as z: z.extractall(extract_dir)
         endnotes_file = os.path.join(extract_dir, 'word', 'endnotes.xml')
-        
-        # Save to Global Dict
         USER_DATA_STORE[user_id] = {
             'temp_dir': temp_dir,
             'extract_dir': extract_dir,
             'endnotes_file': endnotes_file,
             'original_filename': original_filename
         }
-        
     return index()
+
+@app.route('/reset')
+def reset():
+    """Clears the user session data and redirects to home"""
+    user_id = session.get('user_id')
+    if user_id and user_id in USER_DATA_STORE:
+        # Attempt to clean up temp files to save server space
+        try: shutil.rmtree(USER_DATA_STORE[user_id]['temp_dir'])
+        except: pass
+        # Remove user entry from global store
+        del USER_DATA_STORE[user_id]
+    return redirect(url_for('index'))
 
 @app.route('/get_notes')
 def get_notes(): 
@@ -358,14 +331,12 @@ def get_notes():
     return jsonify({'notes': extract_endnotes_xml(user_data)})
 
 @app.route('/search_book', methods=['POST'])
-def search_book(): 
-    return jsonify({'items': query_google_books(request.json['query'])})
+def search_book(): return jsonify({'items': query_google_books(request.json['query'])})
 
 @app.route('/update_note', methods=['POST'])
 def update_note():
     user_data = get_user_data()
     if not user_data: return jsonify({'success': False, 'error': 'Session expired'})
-    
     data = request.json
     write_updated_note(user_data, data['id'], data['html'])
     return jsonify({'success': True})
@@ -374,7 +345,6 @@ def update_note():
 def download():
     user_data = get_user_data()
     if not user_data: return "Session expired", 400
-    
     output = os.path.join(user_data['temp_dir'], f"Resolved_{user_data['original_filename']}")
     with zipfile.ZipFile(output, 'w', zipfile.ZIP_DEFLATED) as z:
         for root, dirs, files in os.walk(user_data['extract_dir']):
