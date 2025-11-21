@@ -58,7 +58,7 @@
 <body>
     <div class="container">
         <div class="header">
-            <h1>CiteResolver <span class="version-tag">v11.0</span></h1>
+            <h1>CiteResolver <span class="version-tag">v12.0</span></h1>
             {% if filename %}
             <div class="controls">
                 <label>Format Style:</label>
@@ -234,6 +234,7 @@
                     }
                     
                     // 2. Link logic
+                    // Prefer short link for display, full url for href if needed
                     const displayUrl = item.short_link || item.url;
                     const link = `<a href="${item.url}">${displayUrl}</a>`;
 
