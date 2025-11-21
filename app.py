@@ -14,9 +14,10 @@ from datetime import datetime
 from urllib.parse import urlparse, unquote
 
 app = Flask(__name__)
-app.config['SECRET_KEY'] = 'production-key-v14-link-fix'
+app.config['SECRET_KEY'] = 'production-key-v15-link-fix'
 
 # ==================== GLOBAL STORAGE ====================
+# Storage for temporary file paths, keyed by user session ID
 USER_DATA_STORE = {}
 
 # ==================== CONFIGURATION ====================
@@ -57,6 +58,8 @@ GOV_AGENCY_MAP = {
 
 # ==================== RELATIONSHIP MANAGER ====================
 class RelationshipManager:
+    """Handles adding URLs to word/_rels/endnotes.xml.rels"""
+    
     def __init__(self, extract_dir):
         self.rels_dir = os.path.join(extract_dir, 'word', '_rels')
         self.rels_path = os.path.join(self.rels_dir, 'endnotes.xml.rels')
@@ -84,6 +87,7 @@ class RelationshipManager:
                     })
 
     def get_or_create_hyperlink(self, url):
+        """Returns the rId for a URL, creating a new Relationship if needed"""
         for rel in self.relationships:
             if rel['Target'] == url and rel['Type'].endswith('/hyperlink'):
                 return rel['Id']
@@ -248,29 +252,75 @@ def query_google_books(query):
     except: return []
 
 def extract_endnotes_xml(user_data):
+    """
+    Reads the endnotes.xml and converts complex Word markup (italics, hyperlinks) 
+    into simple HTML for the editor, preserving original link targets.
+    """
     if not user_data or not user_data['endnotes_file']: return []
     with open(user_data['endnotes_file'], 'r', encoding='utf-8') as f:
         dom = minidom.parseString(f.read())
+    
     notes = []
+    
+    # Find the relationships file path (needed to resolve existing hyperlinks)
+    rels_path = os.path.join(user_data['extract_dir'], 'word', '_rels', 'endnotes.xml.rels')
+    relationships = {}
+    if os.path.exists(rels_path):
+        rels_dom = minidom.parse(rels_path)
+        for rel in rels_dom.getElementsByTagName('Relationship'):
+            if rel.getAttribute('Type').endswith('/hyperlink'):
+                relationships[rel.getAttribute('Id')] = rel.getAttribute('Target')
+
     for en in dom.getElementsByTagName('w:endnote'):
         en_id = en.getAttribute('w:id')
         if en_id and en_id not in ['-1', '0']:
             html_parts = []
             full_text_parts = []
+            
             p = en.getElementsByTagName('w:p')[0]
-            for run in p.getElementsByTagName('w:r'):
-                if run.getElementsByTagName('w:endnoteRef'): continue
-                text = "".join([t.firstChild.nodeValue for t in run.getElementsByTagName('w:t') if t.firstChild])
-                if not text: continue
-                full_text_parts.append(text)
-                rPr = run.getElementsByTagName('w:rPr')
-                is_italic = False
-                if rPr and rPr[0].getElementsByTagName('w:i'): is_italic = True
-                if is_italic: html_parts.append(f"<em>{text}</em>")
-                else: html_parts.append(text)
+            
+            # --- Iterate through direct children of the paragraph ---
+            for node in p.childNodes:
+                
+                if node.nodeType == node.ELEMENT_NODE:
+                    
+                    # Case 1: Existing Hyperlink (<w:hyperlink>)
+                    if node.tagName == 'w:hyperlink':
+                        r_id = node.getAttribute('r:id')
+                        url = relationships.get(r_id, '#') # Get original URL target
+                        
+                        # Extract the text content from the runs inside the hyperlink
+                        link_text = ""
+                        for run in node.getElementsByTagName('w:r'):
+                            text = "".join([t.firstChild.nodeValue for t in run.getElementsByTagName('w:t') if t.firstChild])
+                            link_text += text
+                            full_text_parts.append(text)
+                            
+                        # Convert to HTML anchor tag
+                        html_parts.append(f'<a href="{url}">{link_text}</a>')
+                        continue
+
+                    # Case 2: Standard Run (<w:r>) (for plain text, spaces, or italics)
+                    if node.tagName == 'w:r':
+                        # Check for Endnote Marker and skip it
+                        if node.getElementsByTagName('w:endnoteRef'): continue
+                        
+                        text = "".join([t.firstChild.nodeValue for t in node.getElementsByTagName('w:t') if t.firstChild])
+                        if not text: continue
+                        full_text_parts.append(text)
+                        
+                        # Check Italics
+                        rPr = node.getElementsByTagName('w:rPr')
+                        is_italic = False
+                        if rPr and rPr[0].getElementsByTagName('w:i'): is_italic = True
+                        
+                        if is_italic: html_parts.append(f"<em>{text}</em>")
+                        else: html_parts.append(text)
+            
             final_html = "".join(html_parts).strip()
             clean_term = clean_search_term("".join(full_text_parts).strip())
             notes.append({'id': en_id, 'html': final_html, 'clean_term': clean_term})
+            
     return sorted(notes, key=lambda x: int(x['id']))
 
 def write_updated_note(user_data, note_id, html_content):
@@ -278,6 +328,7 @@ def write_updated_note(user_data, note_id, html_content):
     path = user_data['endnotes_file']
     dom = minidom.parse(str(path))
     rel_mgr = RelationshipManager(user_data['extract_dir'])
+    
     for en in dom.getElementsByTagName('w:endnote'):
         if en.getAttribute('w:id') == str(note_id):
             p = en.getElementsByTagName('w:p')[0]
@@ -300,36 +351,49 @@ def write_updated_note(user_data, note_id, html_content):
                 t.appendChild(dom.createTextNode(" "))
                 r.appendChild(t)
                 p.appendChild(r)
+            
+            # HYPERLINK PARSER: Split by <a> tags or <em> tags
             tokens = re.split(r'(<a href="[^"]+">.*?</a>|<em>.*?</em>)', html_content)
+            
             for token in tokens:
                 if not token: continue
                 token = token.replace('&nbsp;', ' ').replace('&amp;', '&')
+                
+                # Case 1: Hyperlink (New or Existing)
                 if token.startswith('<a href='):
                     match = re.match(r'<a href="([^"]+)">(.*?)</a>', token)
                     if match:
                         url = match.group(1)
                         text = match.group(2)
+                        
                         r_id = rel_mgr.get_or_create_hyperlink(url)
+                        
                         hlink = dom.createElement('w:hyperlink')
                         hlink.setAttribute('r:id', r_id)
+                        
                         run = dom.createElement('w:r')
                         rPr = dom.createElement('w:rPr')
                         rStyle = dom.createElement('w:rStyle')
                         rStyle.setAttribute('w:val', 'Hyperlink')
                         rPr.appendChild(rStyle)
+                        
                         color = dom.createElement('w:color')
                         color.setAttribute('w:val', '0000FF')
                         rPr.appendChild(color)
                         u = dom.createElement('w:u')
                         u.setAttribute('w:val', 'single')
                         rPr.appendChild(u)
+                        
                         run.appendChild(rPr)
                         t = dom.createElement('w:t')
                         t.appendChild(dom.createTextNode(text))
                         run.appendChild(t)
+                        
                         hlink.appendChild(run)
                         p.appendChild(hlink)
                         continue
+
+                # Case 2: Text (Italic or Plain)
                 run = dom.createElement('w:r')
                 rPr = dom.createElement('w:rPr')
                 rFonts = dom.createElement('w:rFonts')
@@ -337,15 +401,18 @@ def write_updated_note(user_data, note_id, html_content):
                 rFonts.setAttribute('w:hAnsi', 'Times New Roman')
                 rPr.appendChild(rFonts)
                 run.appendChild(rPr)
+                
                 text_content = token
                 if token.startswith('<em>'):
                     text_content = token[4:-5]
                     run.getElementsByTagName('w:rPr')[0].appendChild(dom.createElement('w:i'))
+                
                 t = dom.createElement('w:t')
                 t.setAttribute('xml:space', 'preserve')
                 t.appendChild(dom.createTextNode(text_content))
                 run.appendChild(t)
                 p.appendChild(run)
+                
     with open(path, 'w', encoding='utf-8') as f:
         f.write(dom.toxml())
 
