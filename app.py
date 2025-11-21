@@ -14,7 +14,7 @@ from datetime import datetime
 from urllib.parse import urlparse, unquote
 
 app = Flask(__name__)
-app.config['SECRET_KEY'] = 'production-key-v16-final-link'
+app.config['SECRET_KEY'] = 'production-key-v17-final-link-fix'
 
 # ==================== GLOBAL STORAGE ====================
 # Storage for temporary file paths, keyed by user session ID
@@ -147,11 +147,9 @@ def get_heuristic_title(url):
     
     clean_filename = unquote(slug).replace('_', ' ').replace('-', ' ').title()
     
-    # If the path is a generic file extension, use the domain
     if clean_filename.lower().endswith(('.pdf', '.htm', '.html', '.aspx', '.asp', '.php')):
         clean_filename = clean_filename[:-4].strip()
         
-    # Fallback to domain name if the path is generic or empty
     if not clean_filename or len(clean_filename) < 5:
         domain = parsed_uri.netloc.replace('www.', '')
         return domain.split('.')[0].title() 
@@ -182,24 +180,17 @@ def fetch_web_metadata(url):
         }
         
         try:
-            # Use request session to handle redirects gracefully
             s = requests.Session()
             response = s.get(url, headers=headers, timeout=7, allow_redirects=True)
-            
-            # Use final URL after redirects for metadata extraction
-            final_url = response.url
             
             if response.status_code == 200:
                 # Scrape <title>
                 title_match = re.search(r'<title>(.*?)</title>', response.text, re.IGNORECASE | re.DOTALL)
                 if title_match:
                     raw_title = title_match.group(1).strip()
-                    # Filter out bad titles
                     if not any(block_word in raw_title for block_word in ["Just a moment", "Access Denied", "Error", "404"]):
-                         # Use raw_title if it's better than the heuristic
                          page_title = re.sub(r' \| .*$', '', raw_title).strip()
                          
-                
                 # Scrape Last Modified/Published Date from headers 
                 if 'Last-Modified' in response.headers:
                     try:
@@ -400,6 +391,9 @@ def write_updated_note(user_data, note_id, html_content):
                         
                         hlink.appendChild(run)
                         p.appendChild(hlink)
+                        
+                        # --- CRITICAL FIX: Ensure the relationships XML is saved immediately ---
+                        rel_mgr._save()
                         continue
 
                 # Case 2: Text (Italic or Plain)
