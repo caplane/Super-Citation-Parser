@@ -1,323 +1,306 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CiteResolver: Smart Review</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; max-width: 1100px; margin: 0 auto; padding: 20px; background: #f5f7fa; color: #333; }
+        .container { background: white; padding: 30px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.05); }
+        .header { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #eee; padding-bottom: 15px; margin-bottom: 20px; }
+        .header h1 { margin: 0; color: #2c3e50; font-size: 1.8rem; }
+        .version-tag { font-size: 0.5em; color: #888; font-weight: normal; vertical-align: middle; }
+        .controls { display: flex; gap: 15px; align-items: center; }
+        select { padding: 8px 12px; border-radius: 4px; border: 1px solid #ddd; font-size: 14px; }
+        .note-row { border-bottom: 1px solid #eee; padding: 25px 0; display: grid; grid-template-columns: 40px 1fr 300px; gap: 25px; }
+        .note-id { font-weight: bold; color: #adb5bd; font-size: 1.2em; padding-top: 5px; }
+        
+        .editor-container { display: flex; flex-direction: column; gap: 10px; position: relative; }
+        .rich-editor { min-height: 60px; padding: 15px; border: 1px solid #ced4da; border-radius: 6px; font-family: "Times New Roman", serif; font-size: 1.15em; line-height: 1.5; background: #fff; transition: all 0.2s; outline: none; }
+        .rich-editor:focus { border-color: #007bff; box-shadow: 0 0 0 3px rgba(0,123,255,0.1); }
+        .rich-editor em { font-style: italic; background-color: #fff3cd; padding: 0 2px; border-radius: 2px; } 
+        /* Show links inside editor */
+        .rich-editor a { color: #007bff; text-decoration: underline; cursor: pointer; }
+        
+        .actions { display: flex; flex-direction: column; gap: 10px; }
+        .search-wrapper { display: flex; gap: 5px; align-items: stretch; }
+        .search-input { flex-grow: 1; padding: 8px 12px; border: 1px solid #dee2e6; border-radius: 4px; font-size: 0.95em; color: #495057; transition: 0.2s; }
+        .search-input:focus { border-color: #007bff; outline: none; }
+        .btn { border: none; border-radius: 4px; cursor: pointer; font-weight: 500; transition: 0.2s; display: inline-flex; align-items: center; justify-content: center; gap: 6px; font-size: 14px; }
+        .btn-primary { background: #007bff; color: white; padding: 10px 16px; width: 100%; }
+        .btn-primary:hover { background: #0056b3; }
+        .btn-secondary { background: #6c757d; color: white; padding: 0 12px; }
+        .btn-secondary:hover { background: #5a6268; }
+        .btn-download { background: #28a745; color: white; padding: 10px 20px; text-decoration: none; font-weight: 600; }
+        .btn-download:hover { background: #218838; }
+        .results-panel { display: none; background: #f8f9fa; border: 1px solid #e9ecef; border-radius: 6px; margin-top: 10px; max-height: 400px; overflow-y: auto; }
+        .result-card { padding: 15px; border-bottom: 1px solid #eee; background: white; }
+        .result-card:last-child { border-bottom: none; }
+        .result-card:hover { background: #f1f3f5; }
+        .result-title { font-weight: bold; color: #343a40; display: block; margin-bottom: 4px; font-size: 0.95em; }
+        .result-meta { font-size: 0.85em; color: #6c757d; margin-bottom: 10px; }
+        .preview-badge { background: #e7f1ff; color: #0056b3; font-size: 0.85em; padding: 8px 12px; border-radius: 4px; margin-bottom: 10px; font-family: "Times New Roman", serif; border-left: 3px solid #007bff; line-height: 1.4; }
+        .card-actions { display: flex; gap: 8px; justify-content: flex-end; }
+        .btn-action { padding: 6px 12px; font-size: 0.85em; color: white; border-radius: 4px; border: none; cursor: pointer; }
+        .btn-replace { background: #dc3545; }
+        .btn-replace:hover { background: #bd2130; }
+        .btn-append { background: #28a745; }
+        .btn-append:hover { background: #218838; }
+        .loader { display: none; color: #6c757d; font-style: italic; font-size: 0.9em; padding: 10px; text-align: center; }
+        .save-status { font-size: 0.8em; color: #28a745; opacity: 0; transition: opacity 0.5s; position: absolute; bottom: -20px; right: 0; }
+        .upload-box { text-align: center; padding: 80px 20px; border: 2px dashed #dee2e6; border-radius: 8px; margin-top: 20px; }
+        .upload-icon { color: #6c757d; margin-bottom: 20px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>CiteResolver <span class="version-tag">v8.0</span></h1>
+            {% if filename %}
+            <div class="controls">
+                <label>Format Style:</label>
+                <select id="style-selector">
+                    <option value="chicago">Chicago (Notes)</option>
+                    <option value="mla">MLA</option>
+                    <option value="apa">APA</option>
+                </select>
+                <a href="/download" class="btn btn-download"><i class="fas fa-file-export"></i> Download Document</a>
+            </div>
+            {% endif %}
+        </div>
+        
+        {% if not filename %}
+        <form action="/upload" method="post" enctype="multipart/form-data" class="upload-box">
+            <div class="upload-icon">
+                <i class="fas fa-file-word fa-4x"></i>
+            </div>
+            <h3 style="margin-bottom: 10px;">Upload Manuscript</h3>
+            <p style="color: #666; margin-bottom: 25px;">Select a .docx file to begin reviewing citations</p>
+            <input type="file" name="file" accept=".docx" required style="margin-bottom: 20px;">
+            <br>
+            <button type="submit" class="btn btn-primary" style="width: auto; padding: 12px 40px;">Start Review</button>
+        </form>
+        {% else %}
 
-{\rtf1\ansi\ansicpg1252\cocoartf2822
-\cocoatextscaling0\cocoaplatform0{\fonttbl\f0\froman\fcharset0 Times-Roman;}
-{\colortbl;\red255\green255\blue255;\red0\green0\blue0;}
-{\*\expandedcolortbl;;\cssrgb\c0\c0\c0;}
-\margl1440\margr1440\vieww11520\viewh8400\viewkind0
-\deftab720
-\pard\pardeftab720\partightenfactor0
+        <div id="notes-list">
+            <div style="padding: 40px; text-align: center; color: #666;">Loading notes...</div>
+        </div>
 
-\f0\fs24 \cf0 \expnd0\expndtw0\kerning0
-\outl0\strokewidth0 \strokec2 <!DOCTYPE html>\
-<html lang="en">\
-<head>\
-    <meta charset="UTF-8">\
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">\
-    <title>CiteResolver: Smart Review</title>\
-    <!-- FontAwesome for icons -->\
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">\
-    <style>\
-        body \{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; max-width: 1100px; margin: 0 auto; padding: 20px; background: #f5f7fa; color: #333; \}\
-        .container \{ background: white; padding: 30px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.05); \}\
-        \
-        /* Header */\
-        .header \{ display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #eee; padding-bottom: 15px; margin-bottom: 20px; \}\
-        .header h1 \{ margin: 0; color: #2c3e50; font-size: 1.8rem; \}\
-        .version-tag \{ font-size: 0.5em; color: #888; font-weight: normal; vertical-align: middle; \}\
-        \
-        .controls \{ display: flex; gap: 15px; align-items: center; \}\
-        select \{ padding: 8px 12px; border-radius: 4px; border: 1px solid #ddd; font-size: 14px; \}\
-        \
-        /* Note Row */\
-        .note-row \{ border-bottom: 1px solid #eee; padding: 25px 0; display: grid; grid-template-columns: 40px 1fr 300px; gap: 25px; \}\
-        .note-id \{ font-weight: bold; color: #adb5bd; font-size: 1.2em; padding-top: 5px; \}\
-        \
-        /* Rich Text Editor Area */\
-        .editor-container \{ display: flex; flex-direction: column; gap: 10px; position: relative; \}\
-        \
-        .rich-editor \{\
-            min-height: 60px;\
-            padding: 15px;\
-            border: 1px solid #ced4da;\
-            border-radius: 6px;\
-            font-family: "Times New Roman", serif;\
-            font-size: 1.15em;\
-            line-height: 1.5;\
-            background: #fff;\
-            transition: all 0.2s;\
-            outline: none;\
-        \}\
-        .rich-editor:focus \{ border-color: #007bff; box-shadow: 0 0 0 3px rgba(0,123,255,0.1); \}\
-        .rich-editor em \{ font-style: italic; background-color: #fff3cd; padding: 0 2px; border-radius: 2px; \} \
-\
-        /* Search Column */\
-        .actions \{ display: flex; flex-direction: column; gap: 10px; \}\
-        \
-        .search-wrapper \{ display: flex; gap: 5px; align-items: stretch; \}\
-        .search-input \{ \
-            flex-grow: 1; padding: 8px 12px; border: 1px solid #dee2e6; border-radius: 4px; \
-            font-size: 0.95em; color: #495057; transition: 0.2s;\
-        \}\
-        .search-input:focus \{ border-color: #007bff; outline: none; \}\
-        \
-        /* Buttons */\
-        .btn \{ border: none; border-radius: 4px; cursor: pointer; font-weight: 500; transition: 0.2s; display: inline-flex; align-items: center; justify-content: center; gap: 6px; font-size: 14px; \}\
-        .btn-primary \{ background: #007bff; color: white; padding: 10px 16px; width: 100%; \}\
-        .btn-primary:hover \{ background: #0056b3; \}\
-        .btn-secondary \{ background: #6c757d; color: white; padding: 0 12px; \}\
-        .btn-secondary:hover \{ background: #5a6268; \}\
-        .btn-download \{ background: #28a745; color: white; padding: 10px 20px; text-decoration: none; font-weight: 600; \}\
-        .btn-download:hover \{ background: #218838; \}\
-        \
-        /* Results Panel */\
-        .results-panel \{ display: none; background: #f8f9fa; border: 1px solid #e9ecef; border-radius: 6px; margin-top: 10px; max-height: 400px; overflow-y: auto; \}\
-        .result-card \{ padding: 15px; border-bottom: 1px solid #eee; background: white; \}\
-        .result-card:last-child \{ border-bottom: none; \}\
-        .result-card:hover \{ background: #f1f3f5; \}\
-        \
-        .result-title \{ font-weight: bold; color: #343a40; display: block; margin-bottom: 4px; font-size: 0.95em; \}\
-        .result-meta \{ font-size: 0.85em; color: #6c757d; margin-bottom: 10px; \}\
-        \
-        .preview-badge \{ \
-            background: #e7f1ff; color: #0056b3; font-size: 0.85em; padding: 8px 12px; \
-            border-radius: 4px; margin-bottom: 10px; font-family: "Times New Roman", serif; \
-            border-left: 3px solid #007bff; line-height: 1.4;\
-        \}\
-        \
-        .card-actions \{ display: flex; gap: 8px; justify-content: flex-end; \}\
-        .btn-action \{ padding: 6px 12px; font-size: 0.85em; color: white; border-radius: 4px; border: none; cursor: pointer; \}\
-        .btn-replace \{ background: #dc3545; \}\
-        .btn-replace:hover \{ background: #bd2130; \}\
-        .btn-append \{ background: #28a745; \}\
-        .btn-append:hover \{ background: #218838; \}\
-\
-        .loader \{ display: none; color: #6c757d; font-style: italic; font-size: 0.9em; padding: 10px; text-align: center; \}\
-        \
-        /* Status Indicator */\
-        .save-status \{ \
-            font-size: 0.8em; color: #28a745; opacity: 0; transition: opacity 0.5s; \
-            position: absolute; bottom: -20px; right: 0;\
-        \}\
-        \
-        /* Upload Screen */\
-        .upload-box \{ text-align: center; padding: 80px 20px; border: 2px dashed #dee2e6; border-radius: 8px; margin-top: 20px; \}\
-        .upload-icon \{ color: #6c757d; margin-bottom: 20px; \}\
-    </style>\
-</head>\
-<body>\
-    <div class="container">\
-        <div class="header">\
-            <h1>CiteResolver <span class="version-tag">v3.0</span></h1>\
-            \{% if filename %\}\
-            <div class="controls">\
-                <label>Format Style:</label>\
-                <select id="style-selector">\
-                    <option value="chicago">Chicago (Notes)</option>\
-                    <option value="mla">MLA</option>\
-                    <option value="apa">APA</option>\
-                </select>\
-                <a href="/download" class="btn btn-download"><i class="fas fa-file-export"></i> Download Document</a>\
-            </div>\
-            \{% endif %\}\
-        </div>\
-        \
-        \{% if not filename %\}\
-        <form action="/upload" method="post" enctype="multipart/form-data" class="upload-box">\
-            <div class="upload-icon">\
-                <i class="fas fa-file-word fa-4x"></i>\
-            </div>\
-            <h3 style="margin-bottom: 10px;">Upload Manuscript</h3>\
-            <p style="color: #666; margin-bottom: 25px;">Select a .docx file to begin reviewing citations</p>\
-            <input type="file" name="file" accept=".docx" required style="margin-bottom: 20px;">\
-            <br>\
-            <button type="submit" class="btn btn-primary" style="width: auto; padding: 12px 40px;">Start Review</button>\
-        </form>\
-        \{% else %\}\
-\
-        <div id="notes-list">\
-            <!-- Notes will be injected here by JS -->\
-            <div style="padding: 40px; text-align: center; color: #666;">Loading notes...</div>\
-        </div>\
-\
-        <script>\
-            // Receive Jinja2 variable safely\
-            const PUBLISHER_MAP = \{\{ publisher_map | tojson \}\};\
-            \
-            // Initial Load\
-            fetch('/get_notes').then(r => r.json()).then(data => \{\
-                const container = document.getElementById('notes-list');\
-                container.innerHTML = ''; // Clear loading message\
-                \
-                if (data.notes.length === 0) \{\
-                    container.innerHTML = '<div style="padding:20px; text-align:center;">No endnotes found in this document.</div>';\
-                    return;\
-                \}\
-\
-                data.notes.forEach(note => \{\
-                    const div = document.createElement('div');\
-                    div.className = 'note-row';\
-                    div.innerHTML = `\
-                        <div class="note-id">$\{note.id\}</div>\
-                        \
-                        <div class="editor-container">\
-                            <!-- Editable DIV acts as Rich Text Editor -->\
-                            <div class="rich-editor" id="editor-$\{note.id\}" contenteditable="true" \
-                                 onblur="saveNote('$\{note.id\}')">$\{note.html\}</div>\
-                            <div class="save-status" id="status-$\{note.id\}"><i class="fas fa-check"></i> Saved</div>\
-                        </div>\
-\
-                        <div class="actions">\
-                            <div class="search-wrapper">\
-                                <input type="text" class="search-input" id="query-$\{note.id\}" \
-                                       value="$\{note.clean_term\}" placeholder="Search Book..."\
-                                       onkeypress="if(event.key === 'Enter') searchCitation('$\{note.id\}')">\
-                                <button class="btn btn-secondary" onclick="clearQuery('$\{note.id\}')" title="Clear Search">\
-                                    <i class="fas fa-times"></i>\
-                                </button>\
-                            </div>\
-                            <button class="btn btn-primary" onclick="searchCitation('$\{note.id\}')">\
-                                <i class="fas fa-search"></i> Find Source\
-                            </button>\
-                            <div class="loader" id="loader-$\{note.id\}">\
-                                <i class="fas fa-spinner fa-spin"></i> Searching libraries...\
-                            </div>\
-                            <div class="results-panel" id="results-$\{note.id\}"></div>\
-                        </div>\
-                    `;\
-                    container.appendChild(div);\
-                \});\
-            \});\
-\
-            function clearQuery(id) \{\
-                const input = document.getElementById(`query-$\{id\}`);\
-                input.value = '';\
-                input.focus();\
-            \}\
-\
-            function searchCitation(id) \{\
-                const query = document.getElementById(`query-$\{id\}`).value;\
-                if (!query.trim()) return;\
-\
-                const loader = document.getElementById(`loader-$\{id\}`);\
-                const panel = document.getElementById(`results-$\{id\}`);\
-                \
-                loader.style.display = 'block';\
-                panel.style.display = 'none';\
-                panel.innerHTML = '';\
-\
-                fetch('/search_book', \{\
-                    method: 'POST',\
-                    headers: \{'Content-Type': 'application/json'\},\
-                    body: JSON.stringify(\{query: query\})\
-                \})\
-                .then(r => r.json())\
-                .then(data => \{\
-                    loader.style.display = 'none';\
-                    panel.style.display = 'block';\
-                    \
-                    if (data.items.length === 0) \{\
-                        panel.innerHTML = '<div style="padding:15px; color:#666; text-align:center; font-style:italic;">No matching books found.</div>';\
-                        return;\
-                    \}\
-\
-                    data.items.forEach(item => \{\
-                        // Apply Publisher Map if City is missing\
-                        if (!item.city && PUBLISHER_MAP[item.publisher]) \{\
-                            item.city = PUBLISHER_MAP[item.publisher];\
-                        \}\
-\
-                        const style = document.getElementById('style-selector').value;\
-                        \
-                        // 1. Get Display HTML (Clean for the badge)\
-                        const citationHTML = formatCitation(item, style);\
-                        \
-                        // 2. Get Encoded HTML (Safe for onclick parameters)\
-                        const citationEncoded = encodeURIComponent(citationHTML);\
-                        \
-                        const card = document.createElement('div');\
-                        card.className = 'result-card';\
-                        card.innerHTML = `\
-                            <span class="result-title">$\{item.title\}</span>\
-                            <div class="result-meta">$\{item.authors.join(', ')\} ($\{item.year\})</div>\
-                            <div class="preview-badge">$\{citationHTML\}</div>\
-                            <div class="card-actions">\
-                                <button class="btn-action btn-replace" onclick="applyCitation('$\{id\}', '$\{citationEncoded\}', 'replace')">Replace</button>\
-                                <button class="btn-action btn-append" onclick="applyCitation('$\{id\}', '$\{citationEncoded\}', 'append')">+ Append</button>\
-                            </div>\
-                        `;\
-                        panel.appendChild(card);\
-                    \});\
-                \});\
-            \}\
-\
-            function formatCitation(item, style) \{\
-                let citation = "";\
-                const authors = item.authors.join(', ');\
-                \
-                if (style === 'chicago') \{\
-                    citation = `$\{authors\}, <em>$\{item.title\}</em>`;\
-                    let pubParts = [];\
-                    if (item.city) pubParts.push(item.city);\
-                    if (item.publisher) pubParts.push(item.publisher);\
-                    if (item.year) pubParts.push(item.year);\
-                    if (pubParts.length > 0) citation += ` ($\{pubParts.join(': ')\})`;\
-                    citation += ".";\
-                \} \
-                else if (style === 'mla') \{\
-                    citation = `$\{authors\}. <em>$\{item.title\}</em>. $\{item.publisher\}, $\{item.year\}.`;\
-                \}\
-                else if (style === 'apa') \{\
-                    citation = `$\{authors\} ($\{item.year\}). <em>$\{item.title\}</em>. $\{item.publisher\}.`;\
-                \}\
-                return citation;\
-            \}\
-\
-            function applyCitation(id, encodedHtml, mode) \{\
-                const newHtml = decodeURIComponent(encodedHtml);\
-                const editor = document.getElementById(`editor-$\{id\}`);\
-                \
-                if (mode === 'replace') \{\
-                    editor.innerHTML = newHtml;\
-                \} else if (mode === 'append') \{\
-                    let currentHtml = editor.innerHTML.trim();\
-                    const textContent = editor.innerText.trim();\
-                    \
-                    // Smart separator logic\
-                    // If previous text ended with a period, just add space. \
-                    // If it didn't end with a period (and isn't empty), add semicolon.\
-                    let separator = "; ";\
-                    if (textContent.endsWith('.')) \{\
-                        separator = " ";\
-                    \} else if (textContent.length === 0) \{\
-                        separator = "";\
-                    \}\
-                    \
-                    editor.innerHTML = currentHtml + separator + newHtml;\
-                \}\
-\
-                // Hide results and trigger save\
-                document.getElementById(`results-$\{id\}`).style.display = 'none';\
-                saveNote(id);\
-            \}\
-\
-            function saveNote(id) \{\
-                const editor = document.getElementById(`editor-$\{id\}`);\
-                const htmlContent = editor.innerHTML;\
-                \
-                // Show saving status\
-                const status = document.getElementById(`status-$\{id\}`);\
-                \
-                fetch('/update_note', \{\
-                    method: 'POST',\
-                    headers: \{'Content-Type': 'application/json'\},\
-                    body: JSON.stringify(\{id: id, html: htmlContent\})\
-                \}).then(() => \{\
-                    status.style.opacity = '1';\
-                    setTimeout(() => status.style.opacity = '0', 2000);\
-                \});\
-            \}\
-        </script>\
-        \{% endif %\}\
-    </div>\
-</body>\
-</html>}
+        <!-- 
+            DATA INJECTION BLOCK 
+            This approach prevents Syntax Errors when viewing the file in a 
+            static browser/preview where Jinja2 is not processed.
+        -->
+        <script id="publisher-data" type="application/json">
+            {{ publisher_map | tojson }}
+        </script>
+
+        <script>
+            // 1. Initialize with Default Map (Fallback for Static Preview)
+            let PUBLISHER_MAP = {
+                'Harvard University Press': 'Cambridge, MA',
+                'MIT Press': 'Cambridge, MA',
+                'Yale University Press': 'New Haven',
+                'Princeton University Press': 'Princeton',
+                'University of California Press': 'Berkeley',
+                'University of Chicago Press': 'Chicago',
+                'Columbia University Press': 'New York'
+            };
+
+            // 2. Try to Load Server Data (Production Mode)
+            try {
+                const rawData = document.getElementById('publisher-data').textContent;
+                // Only parse if the server actually replaced the Jinja tag
+                if (rawData && !rawData.includes('{{ publisher_map')) {
+                    const parsed = JSON.parse(rawData);
+                    if (parsed) PUBLISHER_MAP = parsed;
+                }
+            } catch (e) {
+                console.log("Running in static mode (using default publisher map).");
+            }
+            
+            // === APP LOGIC ===
+
+            fetch('/get_notes').then(r => r.json()).then(data => {
+                const container = document.getElementById('notes-list');
+                container.innerHTML = ''; 
+                
+                if (data.notes.length === 0) {
+                    container.innerHTML = '<div style="padding:20px; text-align:center;">No endnotes found in this document.</div>';
+                    return;
+                }
+
+                data.notes.forEach(note => {
+                    const div = document.createElement('div');
+                    div.className = 'note-row';
+                    div.innerHTML = `
+                        <div class="note-id">${note.id}</div>
+                        <div class="editor-container">
+                            <div class="rich-editor" id="editor-${note.id}" contenteditable="true" 
+                                 onblur="saveNote('${note.id}')">${note.html}</div>
+                            <div class="save-status" id="status-${note.id}"><i class="fas fa-check"></i> Saved</div>
+                        </div>
+                        <div class="actions">
+                            <div class="search-wrapper">
+                                <input type="text" class="search-input" id="query-${note.id}" 
+                                       value="${note.clean_term}" placeholder="Search Book or URL..."
+                                       onkeypress="if(event.key === 'Enter') searchCitation('${note.id}')">
+                                <button class="btn btn-secondary" onclick="clearQuery('${note.id}')" title="Clear Search">
+                                    <i class="fas fa-times"></i>
+                                </button>
+                            </div>
+                            <button class="btn btn-primary" onclick="searchCitation('${note.id}')">
+                                <i class="fas fa-search"></i> Find Source
+                            </button>
+                            <div class="loader" id="loader-${note.id}">
+                                <i class="fas fa-spinner fa-spin"></i> Searching libraries...
+                            </div>
+                            <div class="results-panel" id="results-${note.id}"></div>
+                        </div>
+                    `;
+                    container.appendChild(div);
+                });
+            });
+
+            function clearQuery(id) {
+                const input = document.getElementById(`query-${id}`);
+                input.value = '';
+                input.focus();
+            }
+
+            function searchCitation(id) {
+                const query = document.getElementById(`query-${id}`).value;
+                if (!query.trim()) return;
+
+                const loader = document.getElementById(`loader-${id}`);
+                const panel = document.getElementById(`results-${id}`);
+                
+                loader.style.display = 'block';
+                panel.style.display = 'none';
+                panel.innerHTML = '';
+
+                fetch('/search_book', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({query: query})
+                })
+                .then(r => r.json())
+                .then(data => {
+                    loader.style.display = 'none';
+                    panel.style.display = 'block';
+                    
+                    if (data.items.length === 0) {
+                        panel.innerHTML = '<div style="padding:15px; color:#666; text-align:center; font-style:italic;">No matching books/websites found.</div>';
+                        return;
+                    }
+
+                    data.items.forEach(item => {
+                        if (!item.city && PUBLISHER_MAP[item.publisher]) {
+                            item.city = PUBLISHER_MAP[item.publisher];
+                        }
+
+                        const style = document.getElementById('style-selector').value;
+                        const citationHTML = formatCitation(item, style);
+                        const citationEncoded = encodeURIComponent(citationHTML);
+                        
+                        let icon = '<i class="fas fa-book"></i>';
+                        if (item.type === 'gov') icon = '<i class="fas fa-landmark"></i>';
+                        else if (item.type === 'web') icon = '<i class="fas fa-globe"></i>';
+                        
+                        let meta = item.authors.join(', ') + ' (' + item.year + ')';
+                        if (item.type === 'web' || item.type === 'gov') {
+                            meta = item.short_link ? item.short_link : item.domain; 
+                        }
+
+                        const card = document.createElement('div');
+                        card.className = 'result-card';
+                        card.innerHTML = `
+                            <span class="result-title">${icon} ${item.title}</span>
+                            <div class="result-meta">${meta}</div>
+                            <div class="preview-badge">${citationHTML}</div>
+                            <div class="card-actions">
+                                <button class="btn-action btn-replace" onclick="applyCitation('${id}', '${citationEncoded}', 'replace')">Replace</button>
+                                <button class="btn-action btn-append" onclick="applyCitation('${id}', '${citationEncoded}', 'append')">+ Append</button>
+                            </div>
+                        `;
+                        panel.appendChild(card);
+                    });
+                });
+            }
+
+            function formatCitation(item, style) {
+                let citation = "";
+                
+                if (item.type === 'web' || item.type === 'gov') {
+                    let authorPrefix = item.type === 'gov' ? "U.S. Government, " : "";
+                    
+                    // Prefer Short Link, then Fallback to URL/Domain
+                    const displayUrl = item.short_link || item.url;
+                    const link = `<a href="${item.url}">${displayUrl}</a>`;
+
+                    if (style === 'chicago') {
+                        citation = `${authorPrefix}"${item.title}," accessed ${item.access_date}, ${link}.`;
+                    } else if (style === 'mla') {
+                        citation = `${authorPrefix}"${item.title}." <em>Web</em>. ${item.access_date} &lt;${link}&gt;.`;
+                    } else if (style === 'apa') {
+                        citation = `${authorPrefix}${item.title}. Retrieved ${item.access_date}, from ${link}`;
+                    }
+                    return citation;
+                }
+
+                const authors = item.authors.join(', ');
+                if (style === 'chicago') {
+                    citation = `${authors}, <em>${item.title}</em>`;
+                    let pubParts = [];
+                    if (item.city) pubParts.push(item.city);
+                    if (item.publisher) pubParts.push(item.publisher);
+                    if (item.year) pubParts.push(item.year);
+                    if (pubParts.length > 0) citation += ` (${pubParts.join(': ')})`;
+                    citation += ".";
+                } 
+                else if (style === 'mla') {
+                    citation = `${authors}. <em>${item.title}</em>. ${item.publisher}, ${item.year}.`;
+                }
+                else if (style === 'apa') {
+                    citation = `${authors} (${item.year}). <em>${item.title}</em>. ${item.publisher}.`;
+                }
+                return citation;
+            }
+
+            function applyCitation(id, encodedHtml, mode) {
+                const newHtml = decodeURIComponent(encodedHtml);
+                const editor = document.getElementById(`editor-${id}`);
+                
+                if (mode === 'replace') {
+                    editor.innerHTML = newHtml;
+                } else if (mode === 'append') {
+                    let currentHtml = editor.innerHTML.trim();
+                    const textContent = editor.innerText.trim();
+                    let separator = "; ";
+                    if (textContent.endsWith('.')) separator = " ";
+                    else if (textContent.length === 0) separator = "";
+                    editor.innerHTML = currentHtml + separator + newHtml;
+                }
+                document.getElementById(`results-${id}`).style.display = 'none';
+                saveNote(id);
+            }
+
+            function saveNote(id) {
+                const editor = document.getElementById(`editor-${id}`);
+                const htmlContent = editor.innerHTML;
+                const status = document.getElementById(`status-${id}`);
+                fetch('/update_note', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({id: id, html: htmlContent})
+                }).then(() => {
+                    status.style.opacity = '1';
+                    setTimeout(() => status.style.opacity = '0', 2000);
+                });
+            }
+        </script>
+        {% endif %}
+    </div>
+</body>
+</html>
